@@ -1,0 +1,46 @@
+[package]
+name = "ducky"
+version = "0.1.0"
+edition = "2021"
+authors = ["CJ Williams <cj@atmoscape.net>", "Claude Code <noreply@anthropic.com>"]
+description = "A high-performance Terminal User Interface (TUI) for DuckDB"
+license = "MIT"
+repository = "https://github.com/cj-williams/ducky"
+readme = "README.md"
+keywords = ["duckdb", "tui", "database", "terminal", "cli"]
+categories = ["command-line-utilities", "database"]
+
+[dependencies]
+# TUI Framework
+ratatui = "0.28"
+crossterm = "0.28"
+
+# DuckDB - use bundled version to avoid system dependency
+duckdb = { version = "1.1", features = ["bundled"] }
+
+# Async Runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# File System
+walkdir = "2.3"
+
+# Configuration
+dirs = "5.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Command line parsing
+clap = { version = "4.0", features = ["derive"] }
