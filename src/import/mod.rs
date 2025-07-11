@@ -1,7 +1,6 @@
 use std::path::Path;
 use anyhow::{Result, Context};
 use duckdb::Connection;
-// Removed tracing imports to avoid console logging during TUI operation
 
 use crate::actions::{Action, ActionLogger};
 
@@ -101,13 +100,11 @@ impl<'a> ImportWorkflows<'a> {
             }
         };
 
-        // Don't log to console during TUI operation
         
         self.connection
             .execute(&query, [])
             .context("Failed to execute import query")?;
 
-        // Don't log to console during TUI operation
         
         Ok(())
     }

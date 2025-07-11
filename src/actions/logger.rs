@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::time::Instant;
 use anyhow::Result;
 use serde_json;
-// Removed tracing imports to avoid console logging during TUI operation
 
 use super::{Action, ActionResult};
 
@@ -17,7 +16,7 @@ pub struct ActionTracker {
 /// Centralized logger for user actions
 pub struct ActionLogger {
     log_file: Option<BufWriter<File>>,
-    #[allow(dead_code)] // Future use for Phase 2+ features  
+    #[allow(dead_code)]  
     log_path: PathBuf,
 }
 
@@ -33,8 +32,6 @@ impl ActionLogger {
             .open(&log_path)?;
         
         let log_file = Some(BufWriter::new(file));
-        
-        // Don't use info!() macro - no console logging
         
         Ok(Self {
             log_file,
@@ -73,7 +70,7 @@ impl ActionLogger {
     }
     
     /// Execute an action and log the result (for simple cases that don't need self mutation)
-    #[allow(dead_code)] // Future use for simple non-borrowing actions
+    #[allow(dead_code)]
     pub fn execute_action<F, R>(&mut self, action: Action, func: F) -> Result<R>
     where
         F: FnOnce() -> Result<R>,
@@ -89,28 +86,24 @@ impl ActionLogger {
         
         if let Some(ref mut writer) = self.log_file {
             if let Err(e) = writeln!(writer, "{}", start_msg) {
-                // Don't use error!() macro as it prints to console - just ignore write errors
                 let _ = e;
             }
         }
     }
     
     fn log_action_result(&mut self, result: &ActionResult) {
-        // Don't log to console via tracing - only log to file
         
         // Log to file in JSON format
         if let Some(ref mut writer) = self.log_file {
             match serde_json::to_string(result) {
                 Ok(json_str) => {
                     if let Err(_e) = writeln!(writer, "{}", json_str) {
-                        // Don't use error!() macro - just ignore write errors
                     } else {
                         // Flush to ensure it's written immediately
                         let _ = writer.flush();
                     }
                 }
                 Err(_e) => {
-                    // Don't use error!() macro - just ignore serialization errors
                 }
             }
         }
@@ -127,7 +120,6 @@ impl ActionLogger {
         
         if let Some(ref mut writer) = self.log_file {
             if let Err(_e) = writeln!(writer, "{}", summary) {
-                // Don't use error!() macro - just ignore write errors
             } else {
                 let _ = writer.flush();
             }
@@ -136,12 +128,10 @@ impl ActionLogger {
     
     /// Log an informational message
     pub fn log_info(&mut self, message: &str) {
-        // Don't use info!() macro - only log to file
         
         if let Some(ref mut writer) = self.log_file {
             let log_msg = format!("ℹ️  {}", message);
             if let Err(_e) = writeln!(writer, "{}", log_msg) {
-                // Don't use error!() macro - just ignore write errors
             } else {
                 let _ = writer.flush();
             }
@@ -150,12 +140,10 @@ impl ActionLogger {
     
     /// Log an error message
     pub fn log_error(&mut self, message: &str) {
-        // Don't use error!() macro - only log to file
         
         if let Some(ref mut writer) = self.log_file {
             let log_msg = format!("❌ ERROR: {}", message);
             if let Err(_e) = writeln!(writer, "{}", log_msg) {
-                // Don't use error!() macro - just ignore write errors
             } else {
                 let _ = writer.flush();
             }
@@ -163,7 +151,7 @@ impl ActionLogger {
     }
     
     /// Get the path to the log file
-    #[allow(dead_code)] // Future use for Phase 2+ features
+    #[allow(dead_code)]
     pub fn log_file_path(&self) -> &PathBuf {
         &self.log_path
     }
@@ -174,6 +162,5 @@ impl Drop for ActionLogger {
         if let Some(ref mut writer) = self.log_file {
             let _ = writer.flush();
         }
-        // Don't use info!() macro - no console logging
     }
 }

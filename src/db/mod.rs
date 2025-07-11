@@ -1,6 +1,5 @@
 use anyhow::Result;
 use duckdb::Connection;
-// Removed tracing imports to avoid console logging during TUI operation
 
 pub mod connection;
 pub mod query;
@@ -12,7 +11,7 @@ pub use schema::TableInfo;
 #[derive(Debug, Clone)]
 pub struct DatabaseInfo {
     pub name: String,
-    #[allow(dead_code)] // Future use for Phase 2+ features
+    #[allow(dead_code)]
     pub path: String,
     pub is_memory: bool,
     pub tables: Vec<TableInfo>,
@@ -37,7 +36,6 @@ pub fn test_connection(path: &str) -> Result<()> {
         Connection::open_in_memory()
             .context("Failed to open in-memory database")
     } else {
-        // Don't log to console during TUI operation
         Connection::open(path)
             .with_context(|| {
                 format!(
@@ -60,15 +58,13 @@ pub fn test_connection(path: &str) -> Result<()> {
     }
     
     if count == 1 {
-        // Don't log to console during TUI operation
         Ok(())
     } else {
-        // Don't log to console during TUI operation
         Err(anyhow::anyhow!("Connection test failed"))
     }
 }
 
-#[allow(dead_code)] // Future use for Phase 2+ features
+#[allow(dead_code)]
 pub fn get_database_version(conn: &Connection) -> Result<String> {
     let mut stmt = conn.prepare("SELECT version()")?;
     let version = stmt.query_row([], |row| {
@@ -211,7 +207,7 @@ mod tests {
     }
 }
 
-#[allow(dead_code)] // Future use for demo/testing purposes
+#[allow(dead_code)]
 pub fn create_sample_data(conn: &Connection) -> Result<()> {
     // Create sample tables for demonstration
     conn.execute_batch(
@@ -260,6 +256,5 @@ pub fn create_sample_data(conn: &Connection) -> Result<()> {
             (5, 2, 'Mouse', 1, 29.99);"
     )?;
     
-    // Don't log to console during TUI operation
     Ok(())
 }

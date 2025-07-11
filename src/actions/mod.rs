@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
-// Removed tracing imports to avoid console logging during TUI operation
 use chrono::{DateTime, Utc};
 
 pub mod logger;
@@ -95,8 +94,7 @@ impl ActionResult {
     }
     
     pub fn log_result(&self) {
-        // Don't log to console - this is handled by ActionLogger file logging only
-        // Remove console logging to prevent TUI interference
+        // No console logging - handled by ActionLogger
     }
 }
 

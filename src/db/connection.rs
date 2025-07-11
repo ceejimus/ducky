@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use anyhow::{Result, Context};
 use duckdb::Connection;
-// Removed tracing imports to avoid console logging during TUI operation
 
 use super::{DatabaseInfo, test_connection, get_table_list};
 
@@ -45,7 +44,6 @@ impl DatabaseManager {
         self.connections.insert(name.clone(), conn);
         self.databases.push(db_info);
         
-        // Don't log to console during TUI operation
         Ok(())
     }
 
@@ -58,7 +56,6 @@ impl DatabaseManager {
                 self.current_database = None;
             }
             
-            // Don't log to console during TUI operation
             Ok(())
         } else {
             Err(anyhow::anyhow!("Database {} not found", name))
@@ -68,7 +65,6 @@ impl DatabaseManager {
     pub fn set_current_database(&mut self, name: &str) -> Result<()> {
         if self.connections.contains_key(name) {
             self.current_database = Some(name.to_string());
-            // Don't log to console during TUI operation
             Ok(())
         } else {
             Err(anyhow::anyhow!("Database {} not found", name))
@@ -80,7 +76,7 @@ impl DatabaseManager {
             .and_then(|name| self.connections.get(name))
     }
 
-    #[allow(dead_code)] // Future use for Phase 2+ features
+    #[allow(dead_code)]
     pub fn get_connection(&self, name: &str) -> Option<&Connection> {
         self.connections.get(name)
     }
@@ -93,14 +89,13 @@ impl DatabaseManager {
         self.current_database.as_deref()
     }
 
-    #[allow(dead_code)] // Future use for Phase 2+ features
+    #[allow(dead_code)]
     pub fn refresh_database(&mut self, name: &str) -> Result<()> {
         if let Some(conn) = self.connections.get(name) {
             let tables = get_table_list(conn)?;
             
             if let Some(db_info) = self.databases.iter_mut().find(|db| db.name == name) {
                 db_info.tables = tables;
-                // Don't log to console during TUI operation
             }
             
             Ok(())
@@ -120,11 +115,10 @@ impl DatabaseManager {
         // Set it as current
         self.set_current_database("memory")?;
         
-        // Don't log to console during TUI operation
         Ok(())
     }
 
-    #[allow(dead_code)] // Future use for Phase 2+ features
+    #[allow(dead_code)]
     pub fn connect_to_file(&mut self, path: &Path) -> Result<String> {
         let name = path.file_name()
             .and_then(|n| n.to_str())

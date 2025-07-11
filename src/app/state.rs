@@ -179,7 +179,6 @@ impl ApplicationState {
 
     pub fn select_database(&mut self, database: String) {
         self.selected_database = Some(database);
-        // Don't change status message - it will be displayed via get_status_display
     }
 
     pub fn select_table(&mut self, table: String) {
@@ -188,7 +187,6 @@ impl ApplicationState {
         self.table_data = None;
         self.scroll_x = 0;
         self.scroll_y = 0;
-        // Don't change status message - it will be displayed via get_status_display
     }
 
     pub fn next_panel(&mut self) {

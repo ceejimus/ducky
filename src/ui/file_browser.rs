@@ -80,7 +80,7 @@ impl FileItem {
         }
     }
     
-    #[allow(dead_code)] // Future use for Phase 2+ features
+    #[allow(dead_code)]
     pub fn get_icon(&self) -> &'static str {
         if self.is_directory {
             "📁"
@@ -188,7 +188,7 @@ impl FileBrowser {
         self.items.get(self.selected_index)
     }
     
-    #[allow(dead_code)] // Future use for Phase 2+ features
+    #[allow(dead_code)]
     pub fn get_selected_path(&self) -> Option<PathBuf> {
         self.get_selected_item().map(|item| item.path.clone())
     }
