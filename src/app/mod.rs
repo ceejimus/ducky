@@ -2,6 +2,7 @@ use std::io;
 
 pub mod state;
 
+use std::time::Duration;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -36,14 +37,20 @@ fn run_app<B: ratatui::backend::Backend>(
     app: &mut App,
 ) -> io::Result<()> {
     loop {
+        // Clean up expired notifications
+        app.update_notifications();
+        
         terminal.draw(|f| app.render(f))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Esc => break,
-                    _ => app.handle_key(key),
+        // Use polling with timeout to allow notifications to auto-expire
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') => break,
+                        KeyCode::Esc => break,
+                        _ => app.handle_key(key),
+                    }
                 }
             }
         }

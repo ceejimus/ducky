@@ -9,6 +9,9 @@ use std::io;
 use std::path::PathBuf;
 use clap::Parser;
 use tracing::{info, error};
+use std::fs::OpenOptions;
+use std::io::Write;
+use chrono;
 
 use db::test_connection;
 
@@ -45,6 +48,9 @@ fn main() -> io::Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Setting default subscriber failed");
     
+    // Set up panic handler to log to file
+    setup_panic_handler();
+    
     info!("Starting Ducky - DuckDB TUI");
     
     // Handle non-interface mode
@@ -59,6 +65,53 @@ fn main() -> io::Result<()> {
     
     // Run normal TUI mode
     app::run()
+}
+
+fn setup_panic_handler() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        let backtrace = std::backtrace::Backtrace::capture();
+        
+        let panic_message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic".to_string()
+        };
+        
+        let location = if let Some(location) = panic_info.location() {
+            format!("{}:{}:{}", location.file(), location.line(), location.column())
+        } else {
+            "Unknown location".to_string()
+        };
+        
+        let panic_log = format!(
+            "🚨 PANIC OCCURRED 🚨\n\
+            Time: {}\n\
+            Message: {}\n\
+            Location: {}\n\
+            \n\
+            Backtrace:\n{}\n\
+            \n\
+            ================================\n",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+            panic_message,
+            location,
+            backtrace
+        );
+        
+        // Log to file
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("ducky-panic.log")
+        {
+            let _ = writeln!(file, "{}", panic_log);
+        }
+        
+        // Also log to stderr for immediate visibility
+        eprintln!("{}", panic_log);
+    }));
 }
 
 fn handle_no_interface_mode(database: Option<PathBuf>) -> io::Result<()> {

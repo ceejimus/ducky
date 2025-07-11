@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 use anyhow::Result;
 use serde_json;
-use tracing::{info, error};
+// Removed tracing imports to avoid console logging during TUI operation
 
 use super::{Action, ActionResult};
 
@@ -34,7 +34,7 @@ impl ActionLogger {
         
         let log_file = Some(BufWriter::new(file));
         
-        info!("Action logger initialized at: {}", log_path.display());
+        // Don't use info!() macro - no console logging
         
         Ok(Self {
             log_file,
@@ -86,32 +86,31 @@ impl ActionLogger {
     
     fn log_action_start(&mut self, action: &Action) {
         let start_msg = format!("🚀 Starting action: {}", action);
-        info!("{}", start_msg);
         
         if let Some(ref mut writer) = self.log_file {
             if let Err(e) = writeln!(writer, "{}", start_msg) {
-                error!("Failed to write to action log: {}", e);
+                // Don't use error!() macro as it prints to console - just ignore write errors
+                let _ = e;
             }
         }
     }
     
     fn log_action_result(&mut self, result: &ActionResult) {
-        // Log to tracing
-        result.log_result();
+        // Don't log to console via tracing - only log to file
         
         // Log to file in JSON format
         if let Some(ref mut writer) = self.log_file {
             match serde_json::to_string(result) {
                 Ok(json_str) => {
-                    if let Err(e) = writeln!(writer, "{}", json_str) {
-                        error!("Failed to write action result to log: {}", e);
+                    if let Err(_e) = writeln!(writer, "{}", json_str) {
+                        // Don't use error!() macro - just ignore write errors
                     } else {
                         // Flush to ensure it's written immediately
                         let _ = writer.flush();
                     }
                 }
-                Err(e) => {
-                    error!("Failed to serialize action result: {}", e);
+                Err(_e) => {
+                    // Don't use error!() macro - just ignore serialization errors
                 }
             }
         }
@@ -127,8 +126,8 @@ impl ActionLogger {
         };
         
         if let Some(ref mut writer) = self.log_file {
-            if let Err(e) = writeln!(writer, "{}", summary) {
-                error!("Failed to write summary to log: {}", e);
+            if let Err(_e) = writeln!(writer, "{}", summary) {
+                // Don't use error!() macro - just ignore write errors
             } else {
                 let _ = writer.flush();
             }
@@ -137,12 +136,12 @@ impl ActionLogger {
     
     /// Log an informational message
     pub fn log_info(&mut self, message: &str) {
-        info!("{}", message);
+        // Don't use info!() macro - only log to file
         
         if let Some(ref mut writer) = self.log_file {
             let log_msg = format!("ℹ️  {}", message);
-            if let Err(e) = writeln!(writer, "{}", log_msg) {
-                error!("Failed to write info to log: {}", e);
+            if let Err(_e) = writeln!(writer, "{}", log_msg) {
+                // Don't use error!() macro - just ignore write errors
             } else {
                 let _ = writer.flush();
             }
@@ -151,12 +150,12 @@ impl ActionLogger {
     
     /// Log an error message
     pub fn log_error(&mut self, message: &str) {
-        error!("{}", message);
+        // Don't use error!() macro - only log to file
         
         if let Some(ref mut writer) = self.log_file {
             let log_msg = format!("❌ ERROR: {}", message);
-            if let Err(e) = writeln!(writer, "{}", log_msg) {
-                error!("Failed to write error to log: {}", e);
+            if let Err(_e) = writeln!(writer, "{}", log_msg) {
+                // Don't use error!() macro - just ignore write errors
             } else {
                 let _ = writer.flush();
             }
@@ -175,6 +174,6 @@ impl Drop for ActionLogger {
         if let Some(ref mut writer) = self.log_file {
             let _ = writer.flush();
         }
-        info!("Action logger closed");
+        // Don't use info!() macro - no console logging
     }
 }

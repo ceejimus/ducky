@@ -9,12 +9,39 @@ use ratatui::{
     Frame,
 };
 
+use crate::import::FileFormat;
+
+/// Represents different types of files that can be opened
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileType {
+    Database,
+    DataFile(FileFormat),
+}
+
+/// Detect file type based on extension
+pub fn detect_file_type(path: &Path) -> Option<FileType> {
+    if let Some(extension) = path.extension() {
+        let ext = extension.to_string_lossy().to_lowercase();
+        match ext.as_str() {
+            // Database files
+            "db" | "duckdb" | "sqlite" | "sqlite3" => Some(FileType::Database),
+            // Data files
+            "csv" => Some(FileType::DataFile(FileFormat::Csv)),
+            "json" => Some(FileType::DataFile(FileFormat::Json)),
+            "parquet" => Some(FileType::DataFile(FileFormat::Parquet)),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FileItem {
     pub path: PathBuf,
     pub name: String,
     pub is_directory: bool,
-    pub is_database: bool,
+    pub file_type: Option<FileType>,
 }
 
 impl FileItem {
@@ -25,32 +52,31 @@ impl FileItem {
             .to_string();
         
         let is_directory = path.is_dir();
-        let is_database = !is_directory && Self::is_database_file(&path);
+        let file_type = if is_directory {
+            None
+        } else {
+            detect_file_type(&path)
+        };
         
         Self {
             path,
             name,
             is_directory,
-            is_database,
-        }
-    }
-    
-    fn is_database_file(path: &Path) -> bool {
-        if let Some(extension) = path.extension() {
-            let ext = extension.to_string_lossy().to_lowercase();
-            matches!(ext.as_str(), "db" | "duckdb" | "sqlite" | "sqlite3")
-        } else {
-            false
+            file_type,
         }
     }
     
     pub fn get_display_name(&self) -> String {
         if self.is_directory {
             format!("📁 {}/", self.name)
-        } else if self.is_database {
-            format!("🗃️  {}", self.name)
         } else {
-            format!("📄 {}", self.name)
+            match &self.file_type {
+                Some(FileType::Database) => format!("🗃️  {}", self.name),
+                Some(FileType::DataFile(FileFormat::Csv)) => format!("📊 {}", self.name),
+                Some(FileType::DataFile(FileFormat::Json)) => format!("📋 {}", self.name),
+                Some(FileType::DataFile(FileFormat::Parquet)) => format!("📦 {}", self.name),
+                None => format!("📄 {}", self.name),
+            }
         }
     }
     
@@ -58,10 +84,14 @@ impl FileItem {
     pub fn get_icon(&self) -> &'static str {
         if self.is_directory {
             "📁"
-        } else if self.is_database {
-            "🗃️"
         } else {
-            "📄"
+            match &self.file_type {
+                Some(FileType::Database) => "🗃️",
+                Some(FileType::DataFile(FileFormat::Csv)) => "📊",
+                Some(FileType::DataFile(FileFormat::Json)) => "📋",
+                Some(FileType::DataFile(FileFormat::Parquet)) => "📦",
+                None => "📄",
+            }
         }
     }
 }
@@ -97,7 +127,7 @@ impl FileBrowser {
                 path: parent.to_path_buf(),
                 name: "..".to_string(),
                 is_directory: true,
-                is_database: false,
+                file_type: None,
             });
         }
         
@@ -180,7 +210,8 @@ impl FileBrowser {
                     if item.is_directory {
                         let path = item.path.clone();
                         self.navigate_to(&path)?;
-                    } else if item.is_database {
+                    } else if let Some(_file_type) = &item.file_type {
+                        // Return the path for any recognized file type (database or data file)
                         return Ok(Some(item.path.clone()));
                     }
                 }
@@ -224,12 +255,16 @@ impl FileBrowser {
             .map(|(i, item)| {
                 let style = if i == self.selected_index {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                } else if item.is_database {
-                    Style::default().fg(Color::Green)
                 } else if item.is_directory {
                     Style::default().fg(Color::Blue)
                 } else {
-                    Style::default().fg(Color::White)
+                    match &item.file_type {
+                        Some(FileType::Database) => Style::default().fg(Color::Green),
+                        Some(FileType::DataFile(FileFormat::Csv)) => Style::default().fg(Color::Cyan),
+                        Some(FileType::DataFile(FileFormat::Json)) => Style::default().fg(Color::Magenta),
+                        Some(FileType::DataFile(FileFormat::Parquet)) => Style::default().fg(Color::LightBlue),
+                        None => Style::default().fg(Color::White),
+                    }
                 };
                 
                 ListItem::new(item.get_display_name()).style(style)

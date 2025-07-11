@@ -49,8 +49,7 @@ impl<'a> DatabaseWorkflows<'a> {
     fn execute_connect_to_database_file(&mut self, name: String, path_str: String) -> Result<()> {
         self.database_manager.add_database(name.clone(), path_str)?;
         self.database_manager.set_current_database(&name)?;
-        self.state
-            .set_status(format!("Successfully connected to database: {name}"));
+        self.state.show_success(format!("Connected to database: {name}"));
         self.state.select_database(name);
         Ok(())
     }
@@ -74,8 +73,7 @@ impl<'a> DatabaseWorkflows<'a> {
         self.database_manager
             .add_database(name.clone(), ":memory:".to_string())?;
         self.database_manager.set_current_database(&name)?;
-        self.state
-            .set_status(format!("Created new in-memory database: {name}"));
+        self.state.show_success(format!("Created database: {name}"));
         self.state.select_database(name);
         Ok(())
     }
@@ -107,8 +105,7 @@ impl<'a> DatabaseWorkflows<'a> {
         }
 
         self.database_manager.remove_database(&db_name)?;
-        self.state
-            .set_status(format!("Disconnected from database: {db_name}"));
+        self.state.show_info(format!("Disconnected from: {db_name}"));
         self.state.selected_database = None;
         self.state.selected_table = None;
         Ok(())
@@ -176,8 +173,12 @@ impl<'a> DatabaseWorkflows<'a> {
         self.database_manager.refresh_database(&current_db)?;
         
         // Update state
-        self.state.set_status(format!("Successfully imported {} into table '{}'", 
-                                     file_path.display(), table_name));
+        self.state.show_success(format!("Imported {} into table '{}'", 
+                                        file_path.file_name().unwrap_or_default().to_string_lossy(), 
+                                        table_name));
+        
+        // Ensure database is selected in state
+        self.state.select_database(current_db);
         self.state.select_table(table_name);
         
         Ok(())

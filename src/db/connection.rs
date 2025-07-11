@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use anyhow::{Result, Context};
 use duckdb::Connection;
-use tracing::info;
+// Removed tracing imports to avoid console logging during TUI operation
 
 use super::{DatabaseInfo, test_connection, get_table_list};
 
@@ -45,7 +45,7 @@ impl DatabaseManager {
         self.connections.insert(name.clone(), conn);
         self.databases.push(db_info);
         
-        info!("Added database: {} at {}", name, path);
+        // Don't log to console during TUI operation
         Ok(())
     }
 
@@ -58,7 +58,7 @@ impl DatabaseManager {
                 self.current_database = None;
             }
             
-            info!("Removed database: {}", name);
+            // Don't log to console during TUI operation
             Ok(())
         } else {
             Err(anyhow::anyhow!("Database {} not found", name))
@@ -68,14 +68,13 @@ impl DatabaseManager {
     pub fn set_current_database(&mut self, name: &str) -> Result<()> {
         if self.connections.contains_key(name) {
             self.current_database = Some(name.to_string());
-            info!("Set current database to: {}", name);
+            // Don't log to console during TUI operation
             Ok(())
         } else {
             Err(anyhow::anyhow!("Database {} not found", name))
         }
     }
 
-    #[allow(dead_code)] // Future use for Phase 2+ features
     pub fn get_current_connection(&self) -> Option<&Connection> {
         self.current_database.as_ref()
             .and_then(|name| self.connections.get(name))
@@ -101,7 +100,7 @@ impl DatabaseManager {
             
             if let Some(db_info) = self.databases.iter_mut().find(|db| db.name == name) {
                 db_info.tables = tables;
-                info!("Refreshed database: {}", name);
+                // Don't log to console during TUI operation
             }
             
             Ok(())
@@ -121,7 +120,7 @@ impl DatabaseManager {
         // Set it as current
         self.set_current_database("memory")?;
         
-        info!("Initialized default databases");
+        // Don't log to console during TUI operation
         Ok(())
     }
 

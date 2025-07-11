@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
-use tracing::{info, error};
+// Removed tracing imports to avoid console logging during TUI operation
 use chrono::{DateTime, Utc};
 
 pub mod logger;
@@ -95,21 +95,8 @@ impl ActionResult {
     }
     
     pub fn log_result(&self) {
-        if self.success {
-            info!(
-                action = ?self.action,
-                duration_ms = self.duration_ms,
-                message = ?self.message,
-                "Action completed successfully"
-            );
-        } else {
-            error!(
-                action = ?self.action,
-                duration_ms = self.duration_ms,
-                error = ?self.error,
-                "Action failed"
-            );
-        }
+        // Don't log to console - this is handled by ActionLogger file logging only
+        // Remove console logging to prevent TUI interference
     }
 }
 

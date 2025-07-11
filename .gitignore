@@ -25,13 +25,16 @@ Thumbs.db
 # Log files
 *.log
 ducky-actions.log
+ducky-panic.log
 
 # Data files (exclude large datasets, keep test data)
 data/pokemon.csv
+data/cars.csv
 data/*.db
 data/*.duckdb
 data/*.sqlite
 data/*.parquet
+test_data.csv
 
 # Temporary files
 *.tmp
@@ -50,3 +53,7 @@ data/*.parquet
 # Test output
 /test-output/
 /coverage/
+
+# Claude settings
+.claude/
+CLAUDE.md

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use duckdb::Connection;
-use tracing::{info, error};
+// Removed tracing imports to avoid console logging during TUI operation
 
 pub mod connection;
 pub mod query;
@@ -37,7 +37,7 @@ pub fn test_connection(path: &str) -> Result<()> {
         Connection::open_in_memory()
             .context("Failed to open in-memory database")
     } else {
-        info!("Attempting to open database file: {}", path);
+        // Don't log to console during TUI operation
         Connection::open(path)
             .with_context(|| {
                 format!(
@@ -60,10 +60,10 @@ pub fn test_connection(path: &str) -> Result<()> {
     }
     
     if count == 1 {
-        info!("Database connection test successful for: {}", path);
+        // Don't log to console during TUI operation
         Ok(())
     } else {
-        error!("Database connection test failed for: {}", path);
+        // Don't log to console during TUI operation
         Err(anyhow::anyhow!("Connection test failed"))
     }
 }
@@ -79,18 +79,24 @@ pub fn get_database_version(conn: &Connection) -> Result<String> {
 
 pub fn get_table_list(conn: &Connection) -> Result<Vec<TableInfo>> {
     let mut stmt = conn.prepare(
-        "SELECT table_name, table_type, column_count, estimated_size 
+        "SELECT table_name, table_type 
          FROM information_schema.tables 
          WHERE table_schema = 'main'
          ORDER BY table_name"
     )?;
     
     let rows = stmt.query_map([], |row| {
+        let table_name: String = row.get(0)?;
+        let table_type: String = row.get(1)?;
+        
+        // Get column count from information_schema.columns
+        let column_count = get_column_count(conn, &table_name).unwrap_or(0);
+        
         Ok(TableInfo {
-            name: row.get::<_, String>(0)?,
-            table_type: row.get::<_, String>(1)?,
-            column_count: row.get::<_, i32>(2)?,
-            estimated_size: row.get::<_, Option<i64>>(3)?,
+            name: table_name,
+            table_type,
+            column_count,
+            estimated_size: None, // DuckDB doesn't provide this in information_schema
         })
     })?;
     
@@ -100,6 +106,109 @@ pub fn get_table_list(conn: &Connection) -> Result<Vec<TableInfo>> {
     }
     
     Ok(tables)
+}
+
+fn get_column_count(conn: &Connection, table_name: &str) -> Result<i32> {
+    let mut stmt = conn.prepare(
+        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = ? AND table_schema = 'main'"
+    )?;
+    
+    let count = stmt.query_row([table_name], |row| {
+        Ok(row.get::<_, i64>(0)? as i32)
+    })?;
+    
+    Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::actions::ActionLogger;
+    use crate::db::connection::DatabaseManager;
+
+    #[test]
+    fn test_get_table_list_empty_database() {
+        // Test that get_table_list works on empty databases
+        let conn = Connection::open_in_memory().unwrap();
+        let result = get_table_list(&conn);
+        assert!(result.is_ok(), "get_table_list should work on empty database");
+        let tables = result.unwrap();
+        assert!(tables.is_empty(), "Empty database should have no tables");
+    }
+
+    #[test]
+    fn test_get_table_list_with_tables() {
+        // Test that get_table_list works with actual tables
+        let conn = Connection::open_in_memory().unwrap();
+        
+        // Create a test table
+        conn.execute(
+            "CREATE TABLE test_table (id INTEGER, name VARCHAR)",
+            []
+        ).unwrap();
+        
+        let result = get_table_list(&conn);
+        assert!(result.is_ok(), "get_table_list should work with tables");
+        
+        let tables = result.unwrap();
+        assert_eq!(tables.len(), 1, "Should have exactly one table");
+        assert_eq!(tables[0].name, "test_table");
+        assert_eq!(tables[0].table_type, "BASE TABLE");
+        assert_eq!(tables[0].column_count, 2, "Should have 2 columns");
+    }
+
+    #[test]
+    fn test_database_manager_initialization() {
+        // Test that DatabaseManager can initialize default databases
+        let mut db_manager = DatabaseManager::new();
+        let result = db_manager.initialize_default_databases();
+        assert!(result.is_ok(), "Should be able to initialize default databases: {:?}", result.err());
+        
+        // Verify the memory database was created
+        let databases = db_manager.get_databases();
+        assert_eq!(databases.len(), 1, "Should have one default database");
+        assert_eq!(databases[0].name, "memory");
+        assert!(databases[0].is_memory, "Default database should be in-memory");
+    }
+
+    #[test]
+    fn test_database_manager_add_database() {
+        // Test adding new databases
+        let mut db_manager = DatabaseManager::new();
+        
+        // Add in-memory database
+        let result = db_manager.add_database("test_db".to_string(), ":memory:".to_string());
+        assert!(result.is_ok(), "Should be able to add in-memory database: {:?}", result.err());
+        
+        let databases = db_manager.get_databases();
+        assert_eq!(databases.len(), 1, "Should have one database");
+        assert_eq!(databases[0].name, "test_db");
+    }
+
+    #[test]
+    fn test_database_workflows_create_new_database() {
+        // Test the full workflow for creating a new database
+        use crate::app::state::ApplicationState;
+        use crate::workflows::DatabaseWorkflows;
+        
+        let mut db_manager = DatabaseManager::new();
+        let mut action_logger = ActionLogger::new().unwrap();
+        let mut state = ApplicationState::new();
+        
+        let mut workflows = DatabaseWorkflows::new(
+            &mut db_manager,
+            &mut action_logger,
+            &mut state,
+        );
+        
+        let result = workflows.create_new_database();
+        assert!(result.is_ok(), "Should be able to create new database via workflows: {:?}", result.err());
+        
+        // Verify database was added
+        let databases = db_manager.get_databases();
+        assert_eq!(databases.len(), 1, "Should have one database after creation");
+        assert!(databases[0].is_memory, "Created database should be in-memory");
+    }
 }
 
 #[allow(dead_code)] // Future use for demo/testing purposes
@@ -151,6 +260,6 @@ pub fn create_sample_data(conn: &Connection) -> Result<()> {
             (5, 2, 'Mouse', 1, 29.99);"
     )?;
     
-    info!("Sample data created successfully");
+    // Don't log to console during TUI operation
     Ok(())
 }

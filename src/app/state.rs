@@ -1,4 +1,6 @@
 
+use crate::db::query::QueryResult;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppState {
     DatabaseBrowser,
@@ -7,6 +9,54 @@ pub enum AppState {
     ImportWizard,
     ExportWizard,
     Settings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotificationType {
+    Success,
+    Error,
+    Info,
+}
+
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub message: String,
+    pub notification_type: NotificationType,
+    pub timestamp: std::time::Instant,
+    pub duration_secs: u64,
+}
+
+impl Notification {
+    pub fn success(message: String) -> Self {
+        Self {
+            message,
+            notification_type: NotificationType::Success,
+            timestamp: std::time::Instant::now(),
+            duration_secs: 3,
+        }
+    }
+
+    pub fn error(message: String) -> Self {
+        Self {
+            message,
+            notification_type: NotificationType::Error,
+            timestamp: std::time::Instant::now(),
+            duration_secs: 5, // Errors stay longer
+        }
+    }
+
+    pub fn info(message: String) -> Self {
+        Self {
+            message,
+            notification_type: NotificationType::Info,
+            timestamp: std::time::Instant::now(),
+            duration_secs: 3,
+        }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        self.timestamp.elapsed().as_secs() >= self.duration_secs
+    }
 }
 
 impl Default for AppState {
@@ -40,6 +90,13 @@ pub struct ApplicationState {
     pub is_creating_table: bool,
     pub new_table_name: String,
     pub table_creation_step: TableCreationStep,
+    // Notification system
+    pub notifications: Vec<Notification>,
+    // Table data display state
+    pub table_data: Option<QueryResult>,
+    pub scroll_x: usize,
+    pub scroll_y: usize,
+    pub page_size: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -57,10 +114,15 @@ impl ApplicationState {
             active_panel: NavigationPanel::DatabaseList,
             selected_database: None,
             selected_table: None,
-            status_message: "Welcome to Ducky - DuckDB TUI".to_string(),
+            status_message: "Ready".to_string(),
             is_creating_table: false,
             new_table_name: String::new(),
             table_creation_step: TableCreationStep::default(),
+            notifications: Vec::new(),
+            table_data: None,
+            scroll_x: 0,
+            scroll_y: 0,
+            page_size: 20,
         }
     }
 
@@ -68,14 +130,65 @@ impl ApplicationState {
         self.status_message = message;
     }
 
+    pub fn get_status_display(&self) -> String {
+        let mut parts = Vec::new();
+        
+        if let Some(db) = &self.selected_database {
+            parts.push(format!("Database: {}", db));
+        }
+        
+        if let Some(table) = &self.selected_table {
+            parts.push(format!("Table: {}", table));
+        }
+        
+        if self.is_creating_table {
+            match self.table_creation_step {
+                TableCreationStep::EnteringTableName => parts.push("Creating table...".to_string()),
+                TableCreationStep::SelectingFile => parts.push("Selecting file...".to_string()),
+                TableCreationStep::ImportingData => parts.push("Importing data...".to_string()),
+            }
+        }
+        
+        if parts.is_empty() {
+            self.status_message.clone()
+        } else {
+            format!("{} | {}", parts.join(" | "), self.status_message)
+        }
+    }
+
+    // Notification system methods
+    pub fn add_notification(&mut self, notification: Notification) {
+        self.notifications.push(notification);
+    }
+
+    pub fn show_success(&mut self, message: String) {
+        self.add_notification(Notification::success(message));
+    }
+
+    pub fn show_error(&mut self, message: String) {
+        self.add_notification(Notification::error(message));
+    }
+
+    pub fn show_info(&mut self, message: String) {
+        self.add_notification(Notification::info(message));
+    }
+
+    pub fn remove_expired_notifications(&mut self) {
+        self.notifications.retain(|n| !n.is_expired());
+    }
+
     pub fn select_database(&mut self, database: String) {
         self.selected_database = Some(database);
-        self.set_status(format!("Selected database: {}", self.selected_database.as_ref().unwrap()));
+        // Don't change status message - it will be displayed via get_status_display
     }
 
     pub fn select_table(&mut self, table: String) {
         self.selected_table = Some(table);
-        self.set_status(format!("Selected table: {}", self.selected_table.as_ref().unwrap()));
+        // Clear table data when changing tables
+        self.table_data = None;
+        self.scroll_x = 0;
+        self.scroll_y = 0;
+        // Don't change status message - it will be displayed via get_status_display
     }
 
     pub fn next_panel(&mut self) {
@@ -104,7 +217,7 @@ impl ApplicationState {
         self.current_state = AppState::ImportWizard;
         self.new_table_name.clear();
         self.table_creation_step = TableCreationStep::EnteringTableName;
-        self.set_status("Enter table name: ".to_string());
+        self.set_status("Ready".to_string());
     }
 
     pub fn cancel_table_creation(&mut self) {
@@ -112,13 +225,14 @@ impl ApplicationState {
         self.current_state = AppState::DatabaseBrowser;
         self.new_table_name.clear();
         self.table_creation_step = TableCreationStep::EnteringTableName;
-        self.set_status("Table creation cancelled".to_string());
+        self.set_status("Ready".to_string());
+        self.show_info("Table creation cancelled".to_string());
     }
 
     pub fn confirm_table_name(&mut self) {
         if !self.new_table_name.trim().is_empty() {
             self.table_creation_step = TableCreationStep::SelectingFile;
-            self.set_status(format!("Creating table '{}' - select file to import", self.new_table_name));
+            self.set_status("Ready".to_string());
         }
     }
 
@@ -136,20 +250,68 @@ impl ApplicationState {
 
     pub fn set_importing_data(&mut self) {
         self.table_creation_step = TableCreationStep::ImportingData;
-        self.set_status(format!("Importing data into table '{}'...", self.new_table_name));
+        self.set_status("Ready".to_string());
     }
 
     pub fn complete_table_creation(&mut self, success: bool) {
+        let table_name = self.new_table_name.clone();
+        
         if success {
-            self.set_status(format!("Successfully created table '{}'", self.new_table_name));
-            self.selected_table = Some(self.new_table_name.clone());
+            self.show_success(format!("Successfully created table '{}'", table_name));
+            self.selected_table = Some(table_name);
+            // Set focus to table panel so user can navigate tables
+            self.active_panel = NavigationPanel::TableList;
         } else {
-            self.set_status(format!("Failed to create table '{}'", self.new_table_name));
+            self.show_error(format!("Failed to create table '{}'", table_name));
         }
         
         self.is_creating_table = false;
         self.current_state = AppState::DatabaseBrowser;
         self.new_table_name.clear();
         self.table_creation_step = TableCreationStep::EnteringTableName;
+        self.set_status("Ready".to_string());
+    }
+
+    pub fn set_table_data(&mut self, data: QueryResult) {
+        self.table_data = Some(data);
+        self.scroll_x = 0;
+        self.scroll_y = 0;
+    }
+
+    pub fn scroll_table_left(&mut self) {
+        if self.scroll_x > 0 {
+            self.scroll_x -= 1;
+        }
+    }
+
+    pub fn scroll_table_right(&mut self, max_columns: usize, visible_columns: usize) {
+        if self.scroll_x + visible_columns < max_columns {
+            self.scroll_x += 1;
+        }
+    }
+
+    pub fn scroll_table_up(&mut self) {
+        if self.scroll_y > 0 {
+            self.scroll_y -= 1;
+        }
+    }
+
+    pub fn scroll_table_down(&mut self, max_rows: usize, visible_rows: usize) {
+        if self.scroll_y + visible_rows < max_rows {
+            self.scroll_y += 1;
+        }
+    }
+
+    pub fn page_table_up(&mut self) {
+        self.scroll_y = self.scroll_y.saturating_sub(self.page_size);
+    }
+
+    pub fn page_table_down(&mut self, max_rows: usize, visible_rows: usize) {
+        let new_scroll = self.scroll_y + self.page_size;
+        if new_scroll + visible_rows <= max_rows {
+            self.scroll_y = new_scroll;
+        } else if max_rows > visible_rows {
+            self.scroll_y = max_rows - visible_rows;
+        }
     }
 }
