@@ -183,4 +183,31 @@ impl<'a> DatabaseWorkflows<'a> {
         
         Ok(())
     }
+
+    /// Save database to file
+    pub fn save_database_to_file(&mut self, database_name: String, file_path: PathBuf) -> Result<()> {
+        let action = Action::SaveDatabase {
+            database_name: database_name.clone(),
+            file_path: file_path.to_string_lossy().to_string(),
+        };
+
+        let tracker = self.action_logger.start_action(action);
+        let result = self.execute_save_database_to_file(database_name, file_path);
+        self.action_logger.complete_action(tracker, &result);
+        result
+    }
+
+    fn execute_save_database_to_file(&mut self, database_name: String, file_path: PathBuf) -> Result<()> {
+        let file_path_str = file_path.to_string_lossy().to_string();
+        
+        self.database_manager.save_database_to_file(&database_name, &file_path_str)?;
+        
+        self.state.show_success(format!(
+            "Saved database '{}' to '{}'", 
+            database_name, 
+            file_path.file_name().unwrap_or_default().to_string_lossy()
+        ));
+        
+        Ok(())
+    }
 }

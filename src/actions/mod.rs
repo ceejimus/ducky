@@ -20,6 +20,10 @@ pub enum Action {
         database_name: String,
         database_type: DatabaseType
     },
+    SaveDatabase {
+        database_name: String,
+        file_path: String
+    },
     SelectDatabase { 
         database_name: String 
     },
@@ -109,6 +113,9 @@ impl std::fmt::Display for Action {
             }
             Action::CreateNewDatabase { database_name, database_type } => {
                 write!(f, "Create new database '{}' ({:?})", database_name, database_type)
+            }
+            Action::SaveDatabase { database_name, file_path } => {
+                write!(f, "Save database '{}' to '{}'", database_name, file_path)
             }
             Action::SelectDatabase { database_name } => {
                 write!(f, "Select database '{}'", database_name)

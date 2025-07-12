@@ -11,7 +11,6 @@ use clap::Parser;
 use tracing::{info, error};
 use std::fs::OpenOptions;
 use std::io::Write;
-use chrono;
 
 use db::test_connection;
 
@@ -173,9 +172,8 @@ fn handle_tui_with_database(db_path: PathBuf) -> io::Result<()> {
     
     info!("Successfully validated connection to {}", db_path.display());
     
-    // TODO: Pass the database path to the TUI app
-    // For now, just run the normal app and the user can connect manually
-    app::run()
+    // Pass the database path to the TUI app
+    app::run_with_database(Some(db_path))
 }
 
 #[derive(Debug)]

@@ -76,21 +76,21 @@ impl QueryExecutor {
         let limited_sql = if sql.trim().to_lowercase().contains("limit") {
             sql.to_string()
         } else {
-            format!("{} LIMIT {}", sql, limit)
+            format!("{sql} LIMIT {limit}")
         };
         
         self.execute_query(&limited_sql)
     }
 
     pub fn get_table_preview(&self, table_name: &str, limit: usize) -> Result<QueryResult> {
-        let sql = format!("SELECT * FROM {} LIMIT {}", table_name, limit);
+        let sql = format!("SELECT * FROM {table_name} LIMIT {limit}");
         self.execute_query(&sql)
     }
 
     pub fn get_table_count(&self, table_name: &str) -> Result<i64> {
-        let sql = format!("SELECT COUNT(*) FROM {}", table_name);
+        let sql = format!("SELECT COUNT(*) FROM {table_name}");
         let mut stmt = self.connection.prepare(&sql)?;
-        let count = stmt.query_row([], |row| Ok(row.get::<_, i64>(0)?))?;
+        let count = stmt.query_row([], |row| row.get::<_, i64>(0))?;
         Ok(count)
     }
 
@@ -98,9 +98,8 @@ impl QueryExecutor {
         let sql = format!(
             "SELECT column_name, data_type, is_nullable, column_default 
              FROM information_schema.columns 
-             WHERE table_name = '{}' 
-             ORDER BY ordinal_position",
-            table_name
+             WHERE table_name = '{table_name}' 
+             ORDER BY ordinal_position"
         );
         
         let mut stmt = self.connection.prepare(&sql)?;
@@ -165,16 +164,16 @@ pub fn build_filter_query(
     filters: &HashMap<String, String>,
     limit: Option<usize>,
 ) -> String {
-    let mut query = format!("SELECT * FROM {}", table_name);
+    let mut query = format!("SELECT * FROM {table_name}");
     
     if !filters.is_empty() {
         let conditions: Vec<String> = filters
             .iter()
             .map(|(column, value)| {
                 if value.contains('%') {
-                    format!("{} LIKE '{}'", column, value)
+                    format!("{column} LIKE '{value}'")
                 } else {
-                    format!("{} = '{}'", column, value)
+                    format!("{column} = '{value}'")
                 }
             })
             .collect();

@@ -34,7 +34,9 @@ data/*.db
 data/*.duckdb
 data/*.sqlite
 data/*.parquet
+data/*.csv
 test_data.csv
+*.db
 
 # Temporary files
 *.tmp
@@ -56,4 +58,6 @@ test_data.csv
 
 # Claude settings
 .claude/
-CLAUDE.md
+
+# Help output (exclude temporary help text)
+help

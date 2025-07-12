@@ -4,7 +4,7 @@ pub mod state;
 
 use std::time::Duration;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -14,15 +14,20 @@ use ratatui::{
 };
 
 use crate::ui::App;
+use std::path::PathBuf;
 
 pub fn run() -> io::Result<()> {
+    run_with_database(None)
+}
+
+pub fn run_with_database(database_path: Option<PathBuf>) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let mut app = App::new_with_database(database_path);
     let result = run_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;
@@ -48,7 +53,7 @@ fn run_app<B: ratatui::backend::Backend>(
                 if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Char('q') => break,
-                        KeyCode::Esc => break,
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                         _ => app.handle_key(key),
                     }
                 }
