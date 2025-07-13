@@ -310,6 +310,27 @@ impl App {
                     self.selected_table_index = 0;
                 }
             }
+            KeyCode::Char('a') => {
+                // Toggle column in sort chain as ascending (only in table viewer)
+                if self.state.active_panel == NavigationPanel::MainContent && self.state.table_data.is_some() {
+                    self.state.toggle_in_sort_chain(true);
+                    self.fetch_table_data_preserve_column();
+                }
+            }
+            KeyCode::Char('A') => {
+                // Toggle column in sort chain as descending (only in table viewer)
+                if self.state.active_panel == NavigationPanel::MainContent && self.state.table_data.is_some() {
+                    self.state.toggle_in_sort_chain(false);
+                    self.fetch_table_data_preserve_column();
+                }
+            }
+            KeyCode::Char('c') => {
+                // Clear all sorting (only in table viewer)
+                if self.state.active_panel == NavigationPanel::MainContent && self.state.table_data.is_some() {
+                    self.state.clear_sort();
+                    self.fetch_table_data_preserve_column();
+                }
+            }
             KeyCode::Char('1') => self.state.set_left_panel(NavigationPanel::DatabaseList),
             KeyCode::Char('2') => self.state.set_left_panel(NavigationPanel::TableList),
             KeyCode::Char('3') => self.state.set_active_panel(NavigationPanel::MainContent),
@@ -369,8 +390,9 @@ impl App {
             NavigationPanel::MainContent => {
                 // Move selected row down
                 if let Some(ref data) = self.state.table_data {
-                    // Calculate visible rows to pass to method
-                    let visible_rows = 10; // Approximate - could be calculated from area
+                    // Calculate visible rows accounting for word wrapping using cached area height
+                    let area_height = self.state.last_table_area_height;
+                    let visible_rows = self.calculate_visible_data_rows_from_height(area_height, data);
                     self.state.move_selected_down(data.rows.len(), visible_rows);
                 }
             }
@@ -474,7 +496,9 @@ impl App {
         let mut column_widths = Vec::new();
         
         for (i, col_name) in data.columns.iter().enumerate() {
-            let header_width = col_name.chars().count();
+            // Calculate header width using the final header text (including sort indicators)
+            let final_header_text = self.get_final_header_text(i, col_name);
+            let header_width = final_header_text.chars().count();
             let mut max_data_width = 0;
             
             // Calculate max data width for visible rows
@@ -523,15 +547,19 @@ impl App {
             constraints.push(Constraint::Length(min_col_width as u16));
         }
 
-        // Create header with styling for selected column
+        // Create header with styling for selected column and sort indicators
         let header_cells: Vec<Cell> = visible_cols.iter().map(|&col_idx| {
             let cell_content = &data.columns[col_idx];
             let col_width = column_widths.get(col_idx).unwrap_or(&min_col_width);
+            
+            // Get the complete header text with all indicators
+            let header_with_sort = self.get_final_header_text(col_idx, cell_content);
+            
             let text = if self.state.is_column_expanded(col_idx) {
                 // For expanded columns, show full header without truncation
-                cell_content.clone()
+                header_with_sort
             } else {
-                truncate_text(cell_content, *col_width)
+                truncate_text(&header_with_sort, *col_width)
             };
             
             if col_idx == self.state.selected_col {
@@ -609,11 +637,229 @@ impl App {
         f.render_widget(table, area);
     }
 
+    // Calculate how many complete data rows actually fit in the available height
+    // accounting for word wrapping in expanded columns
+    fn calculate_visible_data_rows(&self, area: Rect, data: &crate::db::query::QueryResult) -> usize {
+        let available_height = area.height.saturating_sub(3) as usize; // Subtract borders and header
+        let start_row = self.state.scroll_y;
+        
+        if data.rows.is_empty() {
+            return 0;
+        }
+
+        // Calculate column widths (simplified version of what's in render_table_widget)
+        let min_col_width = 8;
+        let mut column_widths = Vec::new();
+        for (i, col_name) in data.columns.iter().enumerate() {
+            let final_header_text = self.get_final_header_text(i, col_name);
+            let header_width = final_header_text.chars().count();
+            
+            let col_width = if self.state.is_column_expanded(i) {
+                header_width.max(min_col_width).min(50)
+            } else {
+                header_width.max(min_col_width).min(25)
+            };
+            column_widths.push(col_width);
+        }
+
+        // Calculate visible columns (simplified)
+        let available_width = area.width.saturating_sub(2) as usize;
+        let start_col = self.state.scroll_x;
+        let mut visible_cols = Vec::new();
+        let mut used_width = 0;
+        
+        for i in start_col..data.columns.len() {
+            let col_width = column_widths.get(i).unwrap_or(&min_col_width);
+            if used_width + col_width <= available_width {
+                visible_cols.push(i);
+                used_width += col_width;
+            } else {
+                break;
+            }
+        }
+
+        // Ensure we show at least one column
+        if visible_cols.is_empty() && start_col < data.columns.len() {
+            visible_cols.push(start_col);
+        }
+
+        // Count how many complete data rows fit
+        let mut used_height = 0;
+        let mut visible_data_rows = 0;
+        
+        for row_idx in start_row..data.rows.len() {
+            if row_idx >= data.rows.len() {
+                break;
+            }
+            
+            let row = &data.rows[row_idx];
+            
+            // Calculate max lines for this row (same logic as render_table_widget)
+            let mut max_lines = 1;
+            for &col_idx in &visible_cols {
+                let empty_string = String::new();
+                let cell_content = row.get(col_idx).unwrap_or(&empty_string);
+                let col_width = column_widths.get(col_idx).unwrap_or(&min_col_width);
+                
+                let lines = if self.state.is_column_expanded(col_idx) {
+                    wrap_text(cell_content, *col_width)
+                } else {
+                    vec![truncate_text(cell_content, *col_width)]
+                };
+                
+                max_lines = max_lines.max(lines.len());
+            }
+            
+            // Check if this row fits in remaining height
+            if used_height + max_lines <= available_height {
+                used_height += max_lines;
+                visible_data_rows += 1;
+            } else {
+                break;
+            }
+        }
+        
+        visible_data_rows.max(1) // Always return at least 1
+    }
+
+    // Simplified version that only needs cached height (for navigation)
+    fn calculate_visible_data_rows_from_height(&self, area_height: u16, data: &crate::db::query::QueryResult) -> usize {
+        let available_height = area_height.saturating_sub(3) as usize; // Subtract borders and header
+        
+        if data.rows.is_empty() {
+            return 0;
+        }
+        
+        // If no expanded columns, each row is height 1
+        if self.state.expanded_columns.is_empty() {
+            return available_height.max(1);
+        }
+        
+        // Calculate column widths similar to render_table_widget logic
+        let min_col_width = 8;
+        let mut column_widths = Vec::new();
+        for (i, col_name) in data.columns.iter().enumerate() {
+            let final_header_text = self.get_final_header_text(i, col_name);
+            let header_width = final_header_text.chars().count();
+            
+            let col_width = if self.state.is_column_expanded(i) {
+                header_width.max(min_col_width).min(50)
+            } else {
+                header_width.max(min_col_width).min(25)
+            };
+            column_widths.push(col_width);
+        }
+
+        // Calculate visible columns (simplified, assume all columns fit for navigation)
+        let available_width = 100; // Reasonable assumption for navigation calculations
+        let start_col = self.state.scroll_x;
+        let mut visible_cols = Vec::new();
+        let mut used_width = 0;
+        
+        for i in start_col..data.columns.len() {
+            let col_width = column_widths.get(i).unwrap_or(&min_col_width);
+            if used_width + col_width <= available_width {
+                visible_cols.push(i);
+                used_width += col_width;
+            } else {
+                break;
+            }
+        }
+        
+        // Ensure we show at least one column
+        if visible_cols.is_empty() && start_col < data.columns.len() {
+            visible_cols.push(start_col);
+        }
+
+        // Count how many complete data rows fit (same logic as calculate_visible_data_rows)
+        let mut used_height = 0;
+        let mut visible_data_rows = 0;
+        let start_row = self.state.scroll_y;
+        
+        for row_idx in start_row..data.rows.len() {
+            if row_idx >= data.rows.len() {
+                break;
+            }
+            
+            let row = &data.rows[row_idx];
+            
+            // Calculate max lines for this row
+            let mut max_lines = 1;
+            for &col_idx in &visible_cols {
+                let empty_string = String::new();
+                let cell_content = row.get(col_idx).unwrap_or(&empty_string);
+                let col_width = column_widths.get(col_idx).unwrap_or(&min_col_width);
+                
+                let lines = if self.state.is_column_expanded(col_idx) {
+                    wrap_text(cell_content, *col_width)
+                } else {
+                    vec![truncate_text(cell_content, *col_width)]
+                };
+                
+                max_lines = max_lines.max(lines.len());
+            }
+            
+            // Check if this row fits in remaining height
+            if used_height + max_lines <= available_height {
+                used_height += max_lines;
+                visible_data_rows += 1;
+            } else {
+                break;
+            }
+        }
+        
+        visible_data_rows.max(1) // Always return at least 1
+    }
+
+    // Helper method to generate the complete header text for a column including all indicators
+    // This ensures width calculations match the actual rendered text
+    fn get_final_header_text(&self, column_index: usize, column_name: &str) -> String {
+        // Add sort indicator if this column is in the sort chain
+        if let Some((position, sort_spec)) = self.state.sort_columns
+            .iter()
+            .enumerate()
+            .find(|(_, spec)| spec.column_index == column_index) {
+            
+            let sort_indicator = match sort_spec.direction {
+                crate::app::state::SortDirection::Ascending => "↑",
+                crate::app::state::SortDirection::Descending => "↓",
+            };
+            
+            // Show order number for multi-column sorts (1-indexed for user readability)
+            if self.state.sort_columns.len() > 1 {
+                format!("{} {}^{}", column_name, sort_indicator, position + 1)
+            } else {
+                format!("{} {}", column_name, sort_indicator)
+            }
+        } else {
+            column_name.to_string()
+        }
+    }
 
     fn fetch_table_data(&mut self) {
         if let (Some(_db), Some(table)) = (&self.state.selected_database, &self.state.selected_table) {
             if let Some(connection) = self.database_manager.get_current_connection() {
-                let sql = format!("SELECT * FROM {table} LIMIT 1000");
+                // First get column names to enable sorting
+                let column_names = match self.get_table_column_names(connection, table) {
+                    Ok(names) => names,
+                    Err(e) => {
+                        self.state.show_error(format!("Failed to get column names: {e}"));
+                        return;
+                    }
+                };
+
+                // Build base SQL query
+                let mut sql = format!("SELECT * FROM {table}");
+                
+                // Add sorting if active
+                if let Some(sort_clause) = self.state.get_sort_sql_clause(&column_names) {
+                    sql.push(' ');
+                    sql.push_str(&sort_clause);
+                }
+                
+                // Add limit
+                sql.push_str(" LIMIT 1000");
+
                 match self.execute_query_direct(connection, &sql) {
                     Ok(data) => {
                         self.state.set_table_data(data);
@@ -628,6 +874,64 @@ impl App {
         } else {
             self.state.show_error("No table selected for data loading".to_string());
         }
+    }
+
+    fn fetch_table_data_preserve_column(&mut self) {
+        if let (Some(_db), Some(table)) = (&self.state.selected_database, &self.state.selected_table) {
+            if let Some(connection) = self.database_manager.get_current_connection() {
+                // First get column names to enable sorting
+                let column_names = match self.get_table_column_names(connection, table) {
+                    Ok(names) => names,
+                    Err(e) => {
+                        self.state.show_error(format!("Failed to get column names: {e}"));
+                        return;
+                    }
+                };
+
+                // Build base SQL query
+                let mut sql = format!("SELECT * FROM {table}");
+                
+                // Add sorting if active
+                if let Some(sort_clause) = self.state.get_sort_sql_clause(&column_names) {
+                    sql.push(' ');
+                    sql.push_str(&sort_clause);
+                }
+                
+                // Add limit
+                sql.push_str(" LIMIT 1000");
+
+                match self.execute_query_direct(connection, &sql) {
+                    Ok(data) => {
+                        self.state.update_table_data_preserve_column(data);
+                    }
+                    Err(e) => {
+                        self.state.show_error(format!("Failed to load table data: {e}"));
+                    }
+                }
+            } else {
+                self.state.show_error("No database connection available".to_string());
+            }
+        } else {
+            self.state.show_error("No table selected for data loading".to_string());
+        }
+    }
+
+    fn get_table_column_names(&self, connection: &duckdb::Connection, table_name: &str) -> anyhow::Result<Vec<String>> {
+        let sql = format!("SELECT * FROM {table_name} LIMIT 0");
+        let mut stmt = connection.prepare(&sql)?;
+        let _rows = stmt.query([])?;
+        
+        let column_count = stmt.column_count();
+        let mut column_names = Vec::new();
+        
+        for i in 0..column_count {
+            let column_name = stmt.column_name(i)
+                .unwrap_or(&format!("column_{i}"))
+                .to_string();
+            column_names.push(column_name);
+        }
+        
+        Ok(column_names)
     }
 
     fn execute_query_direct(&self, connection: &duckdb::Connection, sql: &str) -> anyhow::Result<crate::db::query::QueryResult> {
@@ -1097,7 +1401,9 @@ impl App {
         }
     }
 
-    fn render_table_viewer(&self, f: &mut Frame, area: Rect) {
+    fn render_table_viewer(&mut self, f: &mut Frame, area: Rect) {
+        // Cache area height for navigation calculations
+        self.state.last_table_area_height = area.height;
         let border_style = self.get_panel_border_style(NavigationPanel::MainContent);
 
         let (content, title): (String, String) = if self.state.current_state == AppState::ImportWizard && self.state.is_creating_table {
@@ -1131,7 +1437,31 @@ impl App {
         } else if let (Some(db), Some(table)) = (&self.state.selected_database, &self.state.selected_table) {
             if let Some(ref data) = self.state.table_data {
                 // Render table using ratatui Table widget instead of string content
-                self.render_table_widget(f, area, data, &format!("Table: {} ({} rows)", table, data.row_count));
+                // Build table title with sort status
+                let sort_info = if !self.state.sort_columns.is_empty() {
+                    let mut sort_parts = Vec::new();
+                    for sort_spec in &self.state.sort_columns {
+                        if sort_spec.column_index < data.columns.len() {
+                            let column_name = &data.columns[sort_spec.column_index];
+                            let direction = match sort_spec.direction {
+                                crate::app::state::SortDirection::Ascending => "ASC",
+                                crate::app::state::SortDirection::Descending => "DESC",
+                            };
+                            sort_parts.push(format!("{} {}", column_name, direction));
+                        }
+                    }
+                    
+                    if !sort_parts.is_empty() {
+                        format!(" - Sorted by: {}", sort_parts.join(", "))
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+                
+                let title = format!("Table: {} ({} rows){}", table, data.row_count, sort_info);
+                self.render_table_widget(f, area, data, &title);
                 return; // Early return since we handled rendering directly
             } else {
                 let content = format!(

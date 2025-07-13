@@ -18,6 +18,24 @@ pub enum NotificationType {
     Info,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SortDirection {
+    Ascending,
+    Descending,
+}
+
+impl Default for SortDirection {
+    fn default() -> Self {
+        Self::Ascending
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SortColumnSpec {
+    pub column_index: usize,
+    pub direction: SortDirection,
+}
+
 #[derive(Debug, Clone)]
 pub struct Notification {
     pub message: String,
@@ -99,6 +117,8 @@ pub struct ApplicationState {
     pub selected_row: usize,
     pub selected_col: usize,
     pub page_size: usize,
+    // Cache last table area height for navigation calculations
+    pub last_table_area_height: u16,
     // Database dropdown state
     pub database_dropdown_expanded: bool,
     pub dropdown_selected_index: usize,
@@ -117,6 +137,8 @@ pub struct ApplicationState {
     pub save_filename: String,
     // Column expansion state - support multiple expanded columns
     pub expanded_columns: std::collections::HashSet<usize>,
+    // Multi-column sorting state
+    pub sort_columns: Vec<SortColumnSpec>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -158,6 +180,7 @@ impl ApplicationState {
             selected_row: 0,
             selected_col: 0,
             page_size: 20,
+            last_table_area_height: 20, // Default
             database_dropdown_expanded: false,
             dropdown_selected_index: 0,
             last_left_panel: NavigationPanel::DatabaseList,
@@ -169,6 +192,7 @@ impl ApplicationState {
             is_entering_save_filename: false,
             save_filename: String::new(),
             expanded_columns: std::collections::HashSet::new(),
+            sort_columns: Vec::new(),
         }
     }
 
@@ -237,6 +261,8 @@ impl ApplicationState {
         self.selected_col = 0;
         // Clear expanded columns when switching tables
         self.expanded_columns.clear();
+        // Clear sort state when switching tables
+        self.clear_sort();
     }
 
     pub fn next_panel(&mut self) {
@@ -359,6 +385,42 @@ impl ApplicationState {
         self.scroll_y = 0;
         self.selected_row = 0;
         self.selected_col = 0;
+    }
+
+    pub fn update_table_data_preserve_column(&mut self, data: QueryResult) {
+        // Preserve selected column and horizontal scroll position when updating table data (used during sorting)
+        let saved_col = self.selected_col;
+        let saved_scroll_x = self.scroll_x;
+        
+        self.table_data = Some(data);
+        self.scroll_y = 0;  // Reset vertical scroll to show sorted results from top
+        self.selected_row = 0;  // Reset to first row of sorted data
+        
+        // Restore selected column (ensure it's within bounds)
+        if let Some(ref table_data) = self.table_data {
+            self.selected_col = saved_col.min(table_data.columns.len().saturating_sub(1));
+            
+            // Preserve horizontal scroll, but ensure selected column is visible
+            // If the selected column would be off-screen with the saved scroll position,
+            // adjust scroll to make it visible
+            self.scroll_x = saved_scroll_x;
+            self.ensure_selected_column_visible();
+        } else {
+            self.selected_col = saved_col;
+            self.scroll_x = saved_scroll_x;
+        }
+    }
+
+    // Helper method to ensure the selected column is visible in the current view
+    fn ensure_selected_column_visible(&mut self) {
+        // This is a simplified version - the UI layer has more complex logic for visible columns
+        // But we can ensure the selected column is at least not behind the left edge
+        if self.selected_col < self.scroll_x {
+            // Selected column is to the left of current view - scroll left to show it
+            self.scroll_x = self.selected_col;
+        }
+        // Note: We can't easily calculate right-edge visibility here without knowing
+        // the viewport width, but the existing logic should handle that
     }
 
     pub fn scroll_table_left(&mut self) {
@@ -576,5 +638,93 @@ impl ApplicationState {
 
     pub fn clear_expanded_columns(&mut self) {
         self.expanded_columns.clear();
+    }
+
+    // Column sorting methods
+    // Primary sort (replaces all existing sorts with single column)
+    pub fn set_primary_sort(&mut self, ascending: bool) {
+        let col_idx = self.selected_col;
+        
+        // Check if we're setting the same sort that already exists as primary (first in chain)
+        if let Some(first_sort) = self.sort_columns.first() {
+            if first_sort.column_index == col_idx {
+                let same_direction = match (&first_sort.direction, ascending) {
+                    (SortDirection::Ascending, true) => true,
+                    (SortDirection::Descending, false) => true,
+                    _ => false,
+                };
+                
+                if same_direction {
+                    // Same column and direction - clear all sorting
+                    self.clear_sort();
+                    return;
+                }
+            }
+        }
+        
+        // Set new primary sort (clears all existing sorts)
+        self.sort_columns.clear();
+        self.sort_columns.push(SortColumnSpec {
+            column_index: col_idx,
+            direction: if ascending { SortDirection::Ascending } else { SortDirection::Descending },
+        });
+    }
+
+    // Toggle column in multi-column sort chain
+    pub fn toggle_in_sort_chain(&mut self, ascending: bool) {
+        let col_idx = self.selected_col;
+        let desired_direction = if ascending { SortDirection::Ascending } else { SortDirection::Descending };
+        
+        // Check if column is already in sort chain
+        if let Some(pos) = self.sort_columns.iter().position(|spec| spec.column_index == col_idx) {
+            let current_spec = &self.sort_columns[pos];
+            
+            if current_spec.direction == desired_direction {
+                // Same direction - remove column from chain
+                self.sort_columns.remove(pos);
+            } else {
+                // Different direction - update direction, keep position in chain
+                self.sort_columns[pos].direction = desired_direction;
+            }
+        } else {
+            // Column doesn't exist - add it to end of chain
+            self.sort_columns.push(SortColumnSpec {
+                column_index: col_idx,
+                direction: desired_direction,
+            });
+        }
+    }
+
+    // Helper: check if column is in sort chain
+    pub fn is_column_in_sort_chain(&self, column_index: usize) -> bool {
+        self.sort_columns.iter().any(|spec| spec.column_index == column_index)
+    }
+
+    pub fn clear_sort(&mut self) {
+        self.sort_columns.clear();
+    }
+
+    pub fn get_sort_sql_clause(&self, column_names: &[String]) -> Option<String> {
+        if self.sort_columns.is_empty() {
+            return None;
+        }
+
+        let mut sort_parts = Vec::new();
+        for sort_spec in &self.sort_columns {
+            if sort_spec.column_index < column_names.len() {
+                let column_name = &column_names[sort_spec.column_index];
+                let direction = match sort_spec.direction {
+                    SortDirection::Ascending => "ASC",
+                    SortDirection::Descending => "DESC",
+                };
+                sort_parts.push(format!("{} {}", column_name, direction));
+            }
+        }
+
+        if sort_parts.is_empty() {
+            None
+        } else {
+            Some(format!("ORDER BY {}", sort_parts.join(", ")))
+        }
     }
 }
