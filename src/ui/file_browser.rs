@@ -195,12 +195,12 @@ impl FileBrowser {
     
     pub fn handle_key(&mut self, key: KeyEvent) -> Result<Option<PathBuf>> {
         match key.code {
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 if self.selected_index < self.items.len().saturating_sub(1) {
                     self.selected_index += 1;
                 }
@@ -216,9 +216,8 @@ impl FileBrowser {
                     }
                 }
             }
-            KeyCode::Char('h') => {
-                self.show_hidden = !self.show_hidden;
-                self.refresh()?;
+            KeyCode::Char('?') => {
+                // Help display would go here if needed - for now do nothing
             }
             KeyCode::Char('r') => {
                 self.refresh()?;
@@ -279,9 +278,9 @@ impl FileBrowser {
         
         // Help text
         let help_text = if self.show_hidden {
-            "↑↓: Navigate | Enter: Select/Open | Backspace: Up | h: Hide hidden files | r: Refresh | Esc: Cancel"
+            "↑↓/j/k: Navigate | Enter: Select/Open | Backspace: Up | ?: Help | r: Refresh | Esc: Cancel"
         } else {
-            "↑↓: Navigate | Enter: Select/Open | Backspace: Up | h: Show hidden files | r: Refresh | Esc: Cancel"
+            "↑↓/j/k: Navigate | Enter: Select/Open | Backspace: Up | ?: Help | r: Refresh | Esc: Cancel"
         };
         
         let help = Paragraph::new(help_text)

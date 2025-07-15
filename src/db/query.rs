@@ -87,6 +87,30 @@ impl QueryExecutor {
         self.execute_query(&sql)
     }
 
+    pub fn get_table_preview_with_column_order(&self, table_name: &str, column_order: &[usize], column_names: &[String], limit: usize) -> Result<QueryResult> {
+        // Build SELECT statement with columns in virtual order
+        if column_order.is_empty() || column_names.is_empty() {
+            // Fallback to regular preview if no ordering specified
+            return self.get_table_preview(table_name, limit);
+        }
+
+        let mut ordered_columns = Vec::new();
+        for &virtual_index in column_order {
+            if virtual_index < column_names.len() {
+                ordered_columns.push(column_names[virtual_index].clone());
+            }
+        }
+
+        if ordered_columns.is_empty() {
+            // Fallback if ordering is invalid
+            return self.get_table_preview(table_name, limit);
+        }
+
+        let columns_sql = ordered_columns.join(", ");
+        let sql = format!("SELECT {columns_sql} FROM {table_name} LIMIT {limit}");
+        self.execute_query(&sql)
+    }
+
     pub fn get_table_count(&self, table_name: &str) -> Result<i64> {
         let sql = format!("SELECT COUNT(*) FROM {table_name}");
         let mut stmt = self.connection.prepare(&sql)?;
