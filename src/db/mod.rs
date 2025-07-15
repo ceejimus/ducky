@@ -48,7 +48,7 @@ pub fn test_connection(path: &str) -> Result<()> {
     // Test with a simple query
     let mut stmt = conn.prepare("SELECT 1 as test")?;
     let rows = stmt.query_map([], |row| {
-        Ok(row.get::<_, i32>(0)?)
+        row.get::<_, i32>(0)
     })?;
     
     let mut count = 0;
@@ -68,11 +68,14 @@ pub fn test_connection(path: &str) -> Result<()> {
 pub fn get_database_version(conn: &Connection) -> Result<String> {
     let mut stmt = conn.prepare("SELECT version()")?;
     let version = stmt.query_row([], |row| {
-        Ok(row.get::<_, String>(0)?)
+        row.get::<_, String>(0)
     })?;
     Ok(version)
 }
 
+// TODO: Add support for views in addition to tables
+// This will be a key feature for virtual data exploration and should integrate
+// seamlessly with the column reordering system since it works at the query level
 pub fn get_table_list(conn: &Connection) -> Result<Vec<TableInfo>> {
     let mut stmt = conn.prepare(
         "SELECT table_name, table_type 
