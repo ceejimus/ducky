@@ -4,6 +4,7 @@ mod db;
 mod actions;
 mod workflows;
 mod import;
+mod state;
 
 use std::io;
 use std::path::PathBuf;

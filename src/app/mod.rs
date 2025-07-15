@@ -13,7 +13,7 @@ use ratatui::{
     Terminal,
 };
 
-use crate::ui::App;
+use crate::ui::{App, NewApp};
 use std::path::PathBuf;
 
 pub fn run() -> io::Result<()> {
@@ -27,8 +27,8 @@ pub fn run_with_database(database_path: Option<PathBuf>) -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new_with_database(database_path);
-    let result = run_app(&mut terminal, &mut app);
+    let mut app = NewApp::new_with_database(database_path);
+    let result = run_new_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -55,6 +55,41 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('q') => break,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                         _ => app.handle_key(key),
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn run_new_app<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut NewApp,
+) -> io::Result<()> {
+    loop {
+        // Clean up expired notifications
+        app.update_notifications();
+        
+        terminal.draw(|f| {
+            if let Err(e) = app.render(f) {
+                // Log render errors but continue
+                eprintln!("Render error: {e}");
+            }
+        })?;
+
+        // Use polling with timeout to allow notifications to auto-expire
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') => break,
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                        _ => {
+                            if !app.handle_key(key) {
+                                break; // Exit if state manager requests it
+                            }
+                        }
                     }
                 }
             }

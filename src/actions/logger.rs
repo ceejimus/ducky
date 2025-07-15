@@ -150,6 +150,18 @@ impl ActionLogger {
         }
     }
     
+    /// Log a debug message
+    pub fn log_debug(&mut self, message: &str) {
+        
+        if let Some(ref mut writer) = self.log_file {
+            let log_msg = format!("🐛 DEBUG: {}", message);
+            if let Err(_e) = writeln!(writer, "{}", log_msg) {
+            } else {
+                let _ = writer.flush();
+            }
+        }
+    }
+    
     /// Get the path to the log file
     #[allow(dead_code)]
     pub fn log_file_path(&self) -> &PathBuf {

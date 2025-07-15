@@ -96,6 +96,7 @@ cargo clippy
 - When we do the TODOs let's execute them one at a time not in groups.
 - After TODO list completion check and remove dead_code attributes where appropriate
 - Don't run the app yourself unless you're running tests with `cargo test`. After you make changes just run `cargo check` - I'll build and test.
+- No need to ever build in release unless I ask
 
 ## Context Files
 

@@ -12,7 +12,10 @@ use crate::db::DatabaseManager;
 use crate::workflows::DatabaseWorkflows;
 
 mod file_browser;
+mod new_app;
+
 use file_browser::{render_file_browser_popup, FileBrowser, detect_file_type, FileType};
+pub use new_app::NewApp;
 
 pub struct App {
     state: ApplicationState,
