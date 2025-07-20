@@ -29,7 +29,7 @@ impl TableNameInput {
 }
 
 impl UIState for TableNameInput {
-    fn render(&self, frame: &mut Frame, area: Rect, is_active: bool, _context: &StateContext) -> Result<()> {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_active: bool, _context: &mut StateContext) -> Result<()> {
         let border_style = if is_active {
             Style::default().fg(Color::Yellow)
         } else {

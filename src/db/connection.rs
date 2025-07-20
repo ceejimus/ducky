@@ -157,6 +157,27 @@ impl DatabaseManager {
         }
     }
 
+    pub fn remove_view(&mut self, view_name: &str) -> Result<()> {
+        if let Some(current_db) = &self.current_database {
+            let current_db_name = current_db.clone();
+            if let Some(conn) = self.connections.get(&current_db_name) {
+                // Execute DROP VIEW command
+                let sql = format!("DROP VIEW IF EXISTS {view_name}");
+                conn.execute(&sql, [])
+                    .with_context(|| format!("Failed to drop view '{view_name}'"))?;
+                
+                // Refresh database info to update table list
+                self.refresh_database(&current_db_name)?;
+                
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("No connection to current database"))
+            }
+        } else {
+            Err(anyhow::anyhow!("No current database selected"))
+        }
+    }
+
     pub fn save_database_to_file(&self, database_name: &str, file_path: &str) -> Result<()> {
         if let Some(source_conn) = self.connections.get(database_name) {
             // Use DuckDB's COPY TO command which is much simpler and more efficient

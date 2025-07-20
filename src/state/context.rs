@@ -49,4 +49,9 @@ impl StateContext {
     pub fn set_status_message(&mut self, message: String) {
         self.global_state.status_message = message;
     }
+    
+    /// Set the flag indicating a CLI database was provided
+    pub fn set_cli_database_provided(&mut self, provided: bool) {
+        self.global_state.cli_database_provided = provided;
+    }
 }

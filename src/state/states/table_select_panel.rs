@@ -51,7 +51,7 @@ impl TableSelectPanel {
 }
 
 impl UIState for TableSelectPanel {
-    fn render(&self, frame: &mut Frame, area: Rect, is_active: bool, context: &StateContext) -> Result<()> {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_active: bool, context: &mut StateContext) -> Result<()> {
         let tables = self.get_current_tables(context);
         
         let items: Vec<ListItem> = tables
@@ -119,14 +119,14 @@ impl UIState for TableSelectPanel {
                 }
                 StateTransition::Stay
             }
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Enter => {
                 self.update_selected_table(context);
-                // Focus the main content panel
+                // Focus the main panel
                 StateTransition::FocusPanel(crate::state::PanelType::Main)
             }
-            KeyCode::Left | KeyCode::Char('h') => {
-                // Focus the database panel
-                StateTransition::FocusPanel(crate::state::PanelType::Database)
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Right | KeyCode::Char('l') => {
+                // Switch to the database panel (horizontal navigation)
+                StateTransition::SwitchLeftSidebarPanel
             }
             KeyCode::Char('i') => {
                 // Import data - create new table
@@ -143,8 +143,13 @@ impl UIState for TableSelectPanel {
             KeyCode::Delete | KeyCode::Char('d') => {
                 let tables = self.get_current_tables(context);
                 if let Some(table) = tables.get(self.selected_index) {
-                    // Push delete confirmation modal
-                    StateTransition::Push(Box::new(super::DeleteConfirmation::new_for_table(table.name.clone())))
+                    // Push delete confirmation modal - use appropriate type based on whether it's a view or table
+                    let confirmation = if table.is_view() {
+                        super::DeleteConfirmation::new_for_view(table.name.clone())
+                    } else {
+                        super::DeleteConfirmation::new_for_table(table.name.clone())
+                    };
+                    StateTransition::Push(Box::new(confirmation))
                 } else {
                     StateTransition::Stay
                 }

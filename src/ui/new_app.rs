@@ -58,10 +58,27 @@ impl NewApp {
         }
 
         // Create state context
-        let context = StateContext::new(database_manager, action_logger);
+        let mut context = StateContext::new(database_manager, action_logger);
+        
+        // Set the CLI database flag and selected database if a database was provided
+        if let Some(ref db_path) = database_path {
+            context.set_cli_database_provided(true);
+            
+            // Set the selected database in GlobalState to match what was loaded
+            let db_name = db_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("database")
+                .to_string();
+            context.set_selected_database(Some(db_name));
+        }
         
         // Create state manager with all panels
-        let state_manager = StateManager::new(context);
+        let mut state_manager = StateManager::new(context);
+        
+        // Initialize panels after creation - this will trigger the CLI auto-focus logic
+        if let Err(e) = state_manager.initialize_panels() {
+            state_manager.context_mut().action_logger.log_error(&format!("Failed to initialize panels: {}", e));
+        }
 
         Self {
             state_manager,
@@ -78,7 +95,7 @@ impl NewApp {
         }
     }
 
-    pub fn render(&self, f: &mut Frame) -> Result<()> {
+    pub fn render(&mut self, f: &mut Frame) -> Result<()> {
         let area = f.area();
         self.state_manager.render(f, area)
     }

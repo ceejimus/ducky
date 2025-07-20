@@ -37,37 +37,36 @@ impl QueryExecutor {
         let start_time = std::time::Instant::now();
         
         let mut stmt = self.connection.prepare(sql)?;
-        let column_count = stmt.column_count();
+        let mut rows = stmt.query([])?;
+        
+        // Get column count and names from the executed query
+        let column_count = rows.as_ref().unwrap().column_count();
         
         // Get column names
         let mut columns = Vec::new();
         for i in 0..column_count {
-            if let Ok(name) = stmt.column_name(i) {
+            if let Ok(name) = rows.as_ref().unwrap().column_name(i) {
                 columns.push(name.to_string());
             }
         }
         
-        // Execute query and collect results
-        let rows = stmt.query_map([], |row| {
+        // Collect all rows
+        let mut result_rows = Vec::new();
+        while let Some(row) = rows.next()? {
             let mut row_data = Vec::new();
             for i in 0..column_count {
-                let value = format_column_value(row, i)?;
+                let value = format_column_value(&row, i)?;
                 row_data.push(value);
             }
-            Ok(row_data)
-        })?;
-        
-        let mut result_rows = Vec::new();
-        for row in rows {
-            result_rows.push(row?);
+            result_rows.push(row_data);
         }
         
         let execution_time = start_time.elapsed();
         
         Ok(QueryResult {
             columns,
+            rows: result_rows.clone(),
             row_count: result_rows.len(),
-            rows: result_rows,
             execution_time_ms: execution_time.as_millis() as u64,
         })
     }

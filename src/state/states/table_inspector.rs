@@ -23,7 +23,7 @@ impl TableInspector {
 }
 
 impl UIState for TableInspector {
-    fn render(&self, frame: &mut Frame, area: Rect, is_active: bool, context: &StateContext) -> Result<()> {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_active: bool, context: &mut StateContext) -> Result<()> {
         let border_style = if is_active {
             Style::default().fg(Color::Yellow)
         } else {
@@ -56,8 +56,8 @@ impl UIState for TableInspector {
                 StateTransition::Replace(Box::new(super::TableDataViewer::new()))
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                // Focus the table panel
-                StateTransition::FocusPanel(crate::state::PanelType::Table)
+                // Focus the left sidebar
+                StateTransition::FocusPanel(crate::state::PanelType::LeftSidebar)
             }
             _ => StateTransition::Stay,
         }

@@ -58,7 +58,7 @@ impl DatabaseSelectPanel {
 }
 
 impl UIState for DatabaseSelectPanel {
-    fn render(&self, frame: &mut Frame, area: Rect, is_active: bool, context: &StateContext) -> Result<()> {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_active: bool, context: &mut StateContext) -> Result<()> {
         let databases = context.database_manager.get_databases();
         
         let items: Vec<ListItem> = databases
@@ -121,14 +121,39 @@ impl UIState for DatabaseSelectPanel {
                 }
                 StateTransition::Stay
             }
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Enter => {
                 self.update_selected_database(context);
-                // Focus the table panel
-                StateTransition::FocusPanel(crate::state::PanelType::Table)
+                // Switch to the table panel within the left sidebar
+                StateTransition::SwitchLeftSidebarPanel
+            }
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Right | KeyCode::Char('l') => {
+                // Switch to the table panel (horizontal navigation)
+                StateTransition::SwitchLeftSidebarPanel
             }
             KeyCode::Char('n') => {
                 // Create new database - push modal state
                 StateTransition::Push(Box::new(super::TableNameInput::new_for_database()))
+            }
+            KeyCode::Char('o') => {
+                // Open file browser for database connection
+                // TODO: Implement file browser modal
+                context.action_logger.log_info("File browser not yet implemented");
+                context.add_notification(Notification::info("File browser coming soon".to_string()));
+                StateTransition::Stay
+            }
+            KeyCode::Char('s') => {
+                // Save database to file (only for in-memory databases)
+                let databases = context.database_manager.get_databases();
+                if let Some(db) = databases.get(self.selected_index) {
+                    if db.is_memory {
+                        // TODO: Implement save filename input modal
+                        context.action_logger.log_info(&format!("Save database {} to file", db.name));
+                        context.add_notification(Notification::info("Save functionality coming soon".to_string()));
+                    } else {
+                        context.add_notification(Notification::info("Database already saved to disk".to_string()));
+                    }
+                }
+                StateTransition::Stay
             }
             KeyCode::Delete | KeyCode::Char('d') => {
                 let databases = context.database_manager.get_databases();
