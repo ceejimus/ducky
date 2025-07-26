@@ -1,4 +1,3 @@
-use crate::actions::ActionLogger;
 use crate::app::state::Notification;
 use crate::db::DatabaseManager;
 use super::GlobalState;
@@ -7,7 +6,6 @@ use super::GlobalState;
 /// This acts as a dependency injection container for the state system
 pub struct StateContext {
     pub database_manager: DatabaseManager,
-    pub action_logger: ActionLogger,
     pub notifications: Vec<Notification>,
     pub global_state: GlobalState,
 }
@@ -15,11 +13,9 @@ pub struct StateContext {
 impl StateContext {
     pub fn new(
         database_manager: DatabaseManager,
-        action_logger: ActionLogger,
     ) -> Self {
         Self {
             database_manager,
-            action_logger,
             notifications: Vec::new(),
             global_state: GlobalState::default(),
         }
@@ -30,8 +26,8 @@ impl StateContext {
         self.notifications.push(notification);
     }
     
-    /// Remove expired notifications
-    pub fn update_notifications(&mut self) {
+    /// Periodic tick to remove expired notifications
+    pub fn tick(&mut self) {
         self.notifications.retain(|n| !n.is_expired());
     }
     

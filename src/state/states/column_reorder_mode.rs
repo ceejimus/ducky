@@ -353,13 +353,13 @@ impl UIState for ColumnReorderMode {
             KeyCode::Esc => {
                 // Cancel changes and restore original state
                 self.restore_original_state();
-                context.action_logger.log_info("Column modifications cancelled");
+                tracing::info!("Column modifications cancelled");
                 StateTransition::Pop
             }
             KeyCode::Enter => {
                 // Apply changes and exit modify mode
                 self.apply_changes(context);
-                context.action_logger.log_info("Column modifications applied");
+                tracing::info!("Column modifications applied");
                 // Set a flag to trigger data refresh when returning to table viewer
                 context.set_status_message("Column order updated - refreshing data".to_string());
                 StateTransition::Pop
@@ -408,7 +408,7 @@ impl UIState for ColumnReorderMode {
     }
     
     fn on_enter(&mut self, context: &mut StateContext) -> Result<()> {
-        context.action_logger.log_debug("Entered ColumnReorderMode");
+        tracing::debug!("Entered ColumnReorderMode");
         self.initialize_from_table_data(context);
         Ok(())
     }

@@ -122,7 +122,6 @@ fn get_column_count(conn: &Connection, table_name: &str) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actions::ActionLogger;
     use crate::db::connection::DatabaseManager;
 
     #[test]
@@ -184,30 +183,6 @@ mod tests {
         assert_eq!(databases[0].name, "test_db");
     }
 
-    #[test]
-    fn test_database_workflows_create_new_database() {
-        // Test the full workflow for creating a new database
-        use crate::app::state::ApplicationState;
-        use crate::workflows::DatabaseWorkflows;
-        
-        let mut db_manager = DatabaseManager::new();
-        let mut action_logger = ActionLogger::new().unwrap();
-        let mut state = ApplicationState::new();
-        
-        let mut workflows = DatabaseWorkflows::new(
-            &mut db_manager,
-            &mut action_logger,
-            &mut state,
-        );
-        
-        let result = workflows.create_new_database();
-        assert!(result.is_ok(), "Should be able to create new database via workflows: {:?}", result.err());
-        
-        // Verify database was added
-        let databases = db_manager.get_databases();
-        assert_eq!(databases.len(), 1, "Should have one database after creation");
-        assert!(databases[0].is_memory, "Created database should be in-memory");
-    }
 }
 
 #[allow(dead_code)]

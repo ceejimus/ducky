@@ -210,3 +210,24 @@ pub fn build_filter_query(
     
     query
 }
+
+/// Validate filter syntax by testing if a query with the filter can be prepared
+/// 
+/// This function builds a test query using the provided filter expression and attempts
+/// to prepare it with the database connection. If the preparation succeeds, the syntax
+/// is valid; if it fails, the syntax contains errors.
+pub fn validate_filter_syntax(
+    connection: &Connection,
+    table_name: &str,
+    column_name: &str,
+    filter_expression: &str,
+) -> bool {
+    // Build a test query to validate the filter syntax
+    let test_sql = format!(
+        "SELECT COUNT(*) FROM {} WHERE {} {}",
+        table_name, column_name, filter_expression.trim()
+    );
+
+    // Try to prepare the statement to validate syntax
+    connection.prepare(&test_sql).is_ok()
+}

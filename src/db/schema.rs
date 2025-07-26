@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableInfo {
     pub name: String,
+    // hey claude! for now since we only have views and tables just change this into an "is_view"
+    // bool
     pub table_type: String,
     pub column_count: i32,
     pub estimated_size: Option<i64>,
@@ -78,7 +80,8 @@ impl DatabaseSchema {
     }
 
     pub fn find_table(&self, name: &str) -> Option<&TableInfo> {
-        self.tables.iter()
+        self.tables
+            .iter()
             .chain(self.views.iter())
             .find(|table| table.name == name)
     }
@@ -92,12 +95,12 @@ fn format_size(bytes: i64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = bytes as f64;
     let mut unit_index = 0;
-    
+
     while size >= 1024.0 && unit_index < UNITS.len() - 1 {
         size /= 1024.0;
         unit_index += 1;
     }
-    
+
     if unit_index == 0 {
         format!("{} {}", bytes, UNITS[unit_index])
     } else {
@@ -131,7 +134,7 @@ impl ColumnSchema {
 
     pub fn get_display_type(&self) -> String {
         let mut display = self.data_type.clone();
-        
+
         if self.is_primary_key {
             display.push_str(" PK");
         }
@@ -141,7 +144,7 @@ impl ColumnSchema {
         if !self.is_nullable {
             display.push_str(" NOT NULL");
         }
-        
+
         display
     }
 
@@ -181,10 +184,17 @@ impl TableSchema {
     }
 
     pub fn get_primary_key_columns(&self) -> Vec<&ColumnSchema> {
-        self.columns.iter().filter(|col| col.is_primary_key).collect()
+        self.columns
+            .iter()
+            .filter(|col| col.is_primary_key)
+            .collect()
     }
 
     pub fn get_foreign_key_columns(&self) -> Vec<&ColumnSchema> {
-        self.columns.iter().filter(|col| col.is_foreign_key).collect()
+        self.columns
+            .iter()
+            .filter(|col| col.is_foreign_key)
+            .collect()
     }
 }
+

@@ -8,6 +8,7 @@ use ratatui::{
 use crate::state::{UIState, StateTransition, StateContext, PanelType};
 use super::{DatabaseSelectPanel, TableSelectPanel};
 
+
 /// Panel selection within the left sidebar
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum LeftPanelSelection {
@@ -71,29 +72,40 @@ impl UIState for LeftSidebarPanel {
     }
     
     fn handle_event(&mut self, event: KeyEvent, context: &mut StateContext) -> StateTransition {
-        // Pass the event to the active sub-state and handle any panel switching they request
-        let transition = match self.active_panel {
-            LeftPanelSelection::Database => self.database_panel.handle_event(event, context),
-            LeftPanelSelection::Table => self.table_panel.handle_event(event, context),
-        };
+        use crossterm::event::KeyCode;
         
-        // Check if the sub-state wants to switch panels or do other transitions
-        match transition {
-            StateTransition::SwitchLeftSidebarPanel => {
+        // Handle panel switching at this level before delegating to sub-panels
+        match event.code {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Right | KeyCode::Char('l') => {
                 // Switch to the other panel within the sidebar
                 match self.active_panel {
                     LeftPanelSelection::Database => self.focus_table_panel(),
                     LeftPanelSelection::Table => self.focus_database_panel(),
                 }
-                StateTransition::Stay
+                return StateTransition::Stay;
             }
-            StateTransition::Stay => StateTransition::Stay,
-            other => other, // Pass through all other transitions (modals, focus changes, etc.)
+            _ => {
+                // For other events, pass to the active sub-panel
+                let transition = match self.active_panel {
+                    LeftPanelSelection::Database => self.database_panel.handle_event(event, context),
+                    LeftPanelSelection::Table => self.table_panel.handle_event(event, context),
+                };
+                
+                // Handle special case for database panel Enter key - should switch to table panel
+                if matches!(event.code, KeyCode::Enter) && matches!(self.active_panel, LeftPanelSelection::Database) {
+                    // Database panel selected a database, now switch to table panel
+                    self.focus_table_panel();
+                    StateTransition::Stay
+                } else {
+                    // Pass through all other transitions
+                    transition
+                }
+            }
         }
     }
     
     fn on_enter(&mut self, context: &mut StateContext) -> Result<()> {
-        context.action_logger.log_debug("Entered LeftSidebarPanel");
+        tracing::debug!("Entered LeftSidebarPanel");
         // Initialize both panels
         self.database_panel.on_enter(context)?;
         self.table_panel.on_enter(context)?;
@@ -101,7 +113,7 @@ impl UIState for LeftSidebarPanel {
         // If a CLI database was provided, auto-focus the table panel
         if context.global_state.cli_database_provided {
             self.focus_table_panel();
-            context.action_logger.log_info("Auto-focused table panel due to CLI database");
+            tracing::info!("Auto-focused table panel due to CLI database");
         }
         
         Ok(())

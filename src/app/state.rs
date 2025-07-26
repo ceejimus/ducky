@@ -1,4 +1,3 @@
-
 use crate::db::query::QueryResult;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,7 +168,7 @@ pub struct ApplicationState {
     pub inspect_selected_row: usize, // Selected row in the columns view
     // Column ordering state
     pub column_order: std::collections::HashMap<String, Vec<String>>, // table_name -> ordered_column_names
-    pub original_column_names: Vec<String>, // cached for current table
+    pub original_column_names: Vec<String>,                           // cached for current table
     // Modal modification state (reordering + hiding)
     pub is_modifying: bool,
     pub modify_backup_column_order: Option<Vec<String>>, // backup for cancel operation
@@ -256,15 +255,15 @@ impl ApplicationState {
 
     pub fn get_status_display(&self) -> String {
         let mut parts = Vec::new();
-        
+
         if let Some(db) = &self.selected_database {
             parts.push(format!("Database: {db}"));
         }
-        
+
         if let Some(table) = &self.selected_table {
             parts.push(format!("Table: {table}"));
         }
-        
+
         if self.is_creating_table {
             match self.table_creation_step {
                 TableCreationStep::EnteringTableName => parts.push("Creating table...".to_string()),
@@ -272,7 +271,7 @@ impl ApplicationState {
                 TableCreationStep::ImportingData => parts.push("Importing data...".to_string()),
             }
         }
-        
+
         if self.is_modifying {
             if self.inspect_mode {
                 parts.push("MODIFY MODE: j/k to move, J/K for extremes, o to hide/show, Enter to confirm, Esc to cancel".to_string());
@@ -280,7 +279,7 @@ impl ApplicationState {
                 parts.push("MODIFY MODE: h/l to move, H/L for extremes, o to hide/show, Enter to confirm, Esc to cancel".to_string());
             }
         }
-        
+
         if parts.is_empty() {
             self.status_message.clone()
         } else {
@@ -336,21 +335,21 @@ impl ApplicationState {
             DatabaseList | TableList => {
                 // From any left panel widget, go to data viewer
                 MainContent
-            },
+            }
             MainContent => {
                 // From data viewer, go back to last used left panel widget
                 self.last_left_panel.clone()
-            },
+            }
             StatusBar => DatabaseList, // Keep existing behavior for status bar
         };
-        
+
         // Trigger flash effect if panel is changing
         if self.active_panel != new_panel {
             self.start_panel_flash();
         }
-        
+
         self.active_panel = new_panel;
-        
+
         // Update last_left_panel if we're moving to a left panel
         if matches!(self.active_panel, DatabaseList | TableList) {
             self.last_left_panel = self.active_panel.clone();
@@ -365,12 +364,12 @@ impl ApplicationState {
             MainContent => TableList,
             StatusBar => MainContent,
         };
-        
+
         // Trigger flash effect if panel is changing
         if self.active_panel != new_panel {
             self.start_panel_flash();
         }
-        
+
         self.active_panel = new_panel;
     }
 
@@ -409,13 +408,17 @@ impl ApplicationState {
     }
 
     pub fn add_char_to_table_name(&mut self, c: char) {
-        if self.is_creating_table && self.table_creation_step == TableCreationStep::EnteringTableName {
+        if self.is_creating_table
+            && self.table_creation_step == TableCreationStep::EnteringTableName
+        {
             self.new_table_name.push(c);
         }
     }
 
     pub fn remove_char_from_table_name(&mut self) {
-        if self.is_creating_table && self.table_creation_step == TableCreationStep::EnteringTableName {
+        if self.is_creating_table
+            && self.table_creation_step == TableCreationStep::EnteringTableName
+        {
             self.new_table_name.pop();
         }
     }
@@ -427,7 +430,7 @@ impl ApplicationState {
 
     pub fn complete_table_creation(&mut self, success: bool) {
         let table_name = self.new_table_name.clone();
-        
+
         if success {
             self.show_success(format!("Successfully created table '{table_name}'"));
             self.selected_table = Some(table_name);
@@ -436,7 +439,7 @@ impl ApplicationState {
         } else {
             self.show_error(format!("Failed to create table '{table_name}'"));
         }
-        
+
         self.is_creating_table = false;
         self.current_state = AppState::DatabaseBrowser;
         self.new_table_name.clear();
@@ -455,11 +458,11 @@ impl ApplicationState {
     pub fn update_table_data_preserve_column(&mut self, data: QueryResult) {
         // Preserve selected column and horizontal scroll position when updating table data (used during sorting)
         let saved_scroll_x = self.scroll_x;
-        
+
         self.table_data = Some(data);
-        self.scroll_y = 0;  // Reset vertical scroll to show sorted results from top
-        self.selected_row = 0;  // Reset to first row of sorted data
-        
+        self.scroll_y = 0; // Reset vertical scroll to show sorted results from top
+        self.selected_row = 0; // Reset to first row of sorted data
+
         // Note: selected_column is now name-based and doesn't need bounds checking
         self.scroll_x = saved_scroll_x;
         self.ensure_selected_column_visible();
@@ -547,15 +550,18 @@ impl ApplicationState {
     // Left panel navigation helper
     pub fn set_left_panel(&mut self, panel: NavigationPanel) {
         // Only track changes to actual left panel widgets
-        if matches!(panel, NavigationPanel::DatabaseList | NavigationPanel::TableList) {
+        if matches!(
+            panel,
+            NavigationPanel::DatabaseList | NavigationPanel::TableList
+        ) {
             self.last_left_panel = panel.clone();
         }
-        
+
         // Trigger flash effect if panel is changing
         if self.active_panel != panel {
             self.start_panel_flash();
         }
-        
+
         self.active_panel = panel;
     }
 
@@ -640,16 +646,16 @@ impl ApplicationState {
         self.is_entering_view_name = true;
         self.new_view_name.clear();
     }
-    
+
     pub fn cancel_view_name_input(&mut self) {
         self.is_entering_view_name = false;
         self.new_view_name.clear();
     }
-    
+
     pub fn add_char_to_view_name(&mut self, c: char) {
         self.new_view_name.push(c);
     }
-    
+
     pub fn remove_char_from_view_name(&mut self) {
         self.new_view_name.pop();
     }
@@ -659,28 +665,28 @@ impl ApplicationState {
         if let Some(_table) = &self.selected_table {
             // Get visible columns in virtual order
             let visible_column_names = self.get_visible_column_names();
-            
+
             if visible_column_names.is_empty() {
                 return None;
             }
-            
+
             // Build SELECT clause with virtual column order
             let columns_sql = visible_column_names.join(", ");
             let mut sql = format!("SELECT {columns_sql} FROM {table_name}");
-            
+
             // Add WHERE clause for filters
             let original_column_names = self.get_original_column_names();
             if let Some(filter_clause) = self.get_filter_sql_clause(&original_column_names) {
                 sql.push(' ');
                 sql.push_str(&filter_clause);
             }
-            
+
             // Add ORDER BY clause for sorting
             if let Some(sort_clause) = self.get_sort_sql_clause(&original_column_names) {
                 sql.push(' ');
                 sql.push_str(&sort_clause);
             }
-            
+
             Some(sql)
         } else {
             None
@@ -766,7 +772,7 @@ impl ApplicationState {
                         (SortDirection::Descending, false) => true,
                         _ => false,
                     };
-                    
+
                     if same_direction {
                         // Same column and direction - clear all sorting
                         self.clear_sort();
@@ -774,12 +780,16 @@ impl ApplicationState {
                     }
                 }
             }
-            
+
             // Set new primary sort (clears all existing sorts)
             self.sort_columns.clear();
             self.sort_columns.push(SortColumnSpec {
                 column_name: column_name.clone(),
-                direction: if ascending { SortDirection::Ascending } else { SortDirection::Descending },
+                direction: if ascending {
+                    SortDirection::Ascending
+                } else {
+                    SortDirection::Descending
+                },
             });
         }
     }
@@ -787,12 +797,20 @@ impl ApplicationState {
     // Toggle column in multi-column sort chain
     pub fn toggle_in_sort_chain(&mut self, ascending: bool) {
         if let Some(ref column_name) = self.selected_column {
-            let desired_direction = if ascending { SortDirection::Ascending } else { SortDirection::Descending };
-            
+            let desired_direction = if ascending {
+                SortDirection::Ascending
+            } else {
+                SortDirection::Descending
+            };
+
             // Check if column is already in sort chain
-            if let Some(pos) = self.sort_columns.iter().position(|spec| spec.column_name == *column_name) {
+            if let Some(pos) = self
+                .sort_columns
+                .iter()
+                .position(|spec| spec.column_name == *column_name)
+            {
                 let current_spec = &self.sort_columns[pos];
-                
+
                 if current_spec.direction == desired_direction {
                     // Same direction - remove column from chain
                     self.sort_columns.remove(pos);
@@ -812,7 +830,9 @@ impl ApplicationState {
 
     // Helper: check if column is in sort chain
     pub fn is_column_in_sort_chain(&self, column_name: &str) -> bool {
-        self.sort_columns.iter().any(|spec| spec.column_name == column_name)
+        self.sort_columns
+            .iter()
+            .any(|spec| spec.column_name == column_name)
     }
 
     pub fn clear_sort(&mut self) {
@@ -847,7 +867,7 @@ impl ApplicationState {
         self.search_text.clear();
         self.search_syntax_valid = true;
         self.search_debounce_timer = None;
-        
+
         // Auto-expand the column being searched
         self.expanded_columns.insert(column_index);
     }
@@ -881,7 +901,8 @@ impl ApplicationState {
             if let Some(column_index) = self.search_column {
                 if let Some(column_name) = self.get_column_name_by_index(column_index) {
                     // Store the filter by column name
-                    self.column_filters.insert(column_name, self.search_text.trim().to_string());
+                    self.column_filters
+                        .insert(column_name, self.search_text.trim().to_string());
                     self.cancel_search();
                     return true;
                 }
@@ -1008,7 +1029,7 @@ impl ApplicationState {
         if self.original_column_names.is_empty() && !column_names.is_empty() {
             self.original_column_names = column_names.clone();
         }
-        
+
         // Initialize virtual column order for current table if not already set
         if let Some(table_name) = &self.selected_table {
             if !self.column_order.contains_key(table_name) {
@@ -1020,7 +1041,8 @@ impl ApplicationState {
     pub fn get_virtual_column_order(&self) -> Vec<String> {
         if let Some(table_name) = &self.selected_table {
             // Return custom order if exists, otherwise return original order
-            self.column_order.get(table_name)
+            self.column_order
+                .get(table_name)
                 .cloned()
                 .unwrap_or_else(|| self.original_column_names.clone())
         } else {
@@ -1032,25 +1054,25 @@ impl ApplicationState {
     pub fn reorder_column(&mut self, from_index: usize, to_index: usize) -> bool {
         if let Some(table_name) = &self.selected_table {
             let mut virtual_order = self.get_virtual_column_order();
-            
+
             // Validate indices
             if from_index >= virtual_order.len() || to_index >= virtual_order.len() {
                 return false;
             }
-            
+
             // Perform the reorder
             let moved_column = virtual_order.remove(from_index);
             virtual_order.insert(to_index, moved_column);
-            
+
             // Update the column order
             self.column_order.insert(table_name.clone(), virtual_order);
-            
+
             true
         } else {
             false
         }
     }
-    
+
     pub fn has_hidden_columns(&self) -> bool {
         if let Some(table_name) = &self.selected_table {
             self.hidden_columns
@@ -1091,7 +1113,8 @@ impl ApplicationState {
             // Restore backup column order
             if let Some(backup_order) = &self.modify_backup_column_order {
                 if let Some(table_name) = &self.selected_table {
-                    self.column_order.insert(table_name.clone(), backup_order.clone());
+                    self.column_order
+                        .insert(table_name.clone(), backup_order.clone());
                 }
             }
             self.is_modifying = false;
@@ -1268,14 +1291,16 @@ impl ApplicationState {
         // This ensures all column operations work with the current display order
         self.get_virtual_column_order()
     }
-    
+
     pub fn get_original_column_names(&self) -> Vec<String> {
         // Return the original database column order for SQL generation
         self.original_column_names.clone()
     }
 
     pub fn get_column_index_by_name(&self, column_name: &str) -> Option<usize> {
-        self.get_column_names().iter().position(|name| name == column_name)
+        self.get_column_names()
+            .iter()
+            .position(|name| name == column_name)
     }
 
     pub fn get_column_name_by_index(&self, index: usize) -> Option<String> {
@@ -1283,7 +1308,8 @@ impl ApplicationState {
     }
 
     pub fn get_selected_column_index(&self) -> Option<usize> {
-        self.selected_column.as_ref()
+        self.selected_column
+            .as_ref()
             .and_then(|name| self.get_column_index_by_name(name))
     }
 
@@ -1317,7 +1343,9 @@ impl ApplicationState {
 
     pub fn get_first_visible_column(&self) -> Option<String> {
         let column_names = self.get_column_names();
-        column_names.into_iter().find(|name| !self.is_column_hidden_by_name(name))
+        column_names
+            .into_iter()
+            .find(|name| !self.is_column_hidden_by_name(name))
     }
 
     pub fn get_last_visible_column(&self) -> Option<String> {
@@ -1340,13 +1368,13 @@ impl ApplicationState {
                 // In table viewer, use selected column
                 self.selected_column.clone()
             };
-            
+
             if let Some(col_name) = column_name {
                 let was_hidden = self.is_column_hidden_by_name(&col_name);
-                
+
                 // Get or create the hidden columns set for this table
                 let hidden_set = self.hidden_columns.entry(table_name.clone()).or_default();
-                
+
                 if was_hidden {
                     // Column is hidden, show it
                     hidden_set.remove(&col_name);
@@ -1354,12 +1382,12 @@ impl ApplicationState {
                     // Column is visible, hide it
                     hidden_set.insert(col_name.clone());
                 }
-                
+
                 // Clean up empty sets
                 if hidden_set.is_empty() {
                     self.hidden_columns.remove(&table_name);
                 }
-                
+
                 // Auto-select next visible column when hiding current selection
                 if !was_hidden && Some(&col_name) == self.selected_column.as_ref() {
                     if let Some(next_col) = self.get_next_visible_column(&col_name) {
@@ -1394,7 +1422,8 @@ impl ApplicationState {
 
     pub fn get_visible_column_names(&self) -> Vec<String> {
         let column_names = self.get_column_names();
-        column_names.into_iter()
+        column_names
+            .into_iter()
             .filter(|name| !self.is_column_hidden_by_name(name))
             .collect()
     }
@@ -1403,13 +1432,16 @@ impl ApplicationState {
         // This method returns the indices of visible columns in their virtual order
         let virtual_order = self.get_virtual_column_order();
         let original_names = self.get_original_column_names();
-        
-        virtual_order.iter()
+
+        virtual_order
+            .iter()
             .enumerate()
             .filter(|(_, name)| !self.is_column_hidden_by_name(name))
             .filter_map(|(virtual_idx, name)| {
                 // Find the original index of this column name
-                original_names.iter().position(|orig_name| orig_name == name)
+                original_names
+                    .iter()
+                    .position(|orig_name| orig_name == name)
                     .map(|_| virtual_idx)
             })
             .collect()
@@ -1432,3 +1464,4 @@ impl ApplicationState {
         }
     }
 }
+

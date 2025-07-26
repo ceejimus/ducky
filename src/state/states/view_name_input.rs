@@ -73,7 +73,7 @@ impl UIState for ViewNameInput {
                         let current_db = context.database_manager.get_current_database().map(|s| s.to_string());
                         if let Some(current_db) = current_db {
                             if let Err(e) = context.database_manager.refresh_database(&current_db) {
-                                context.action_logger.log_error(&format!("Failed to refresh database after view creation: {}", e));
+                                tracing::error!("Failed to refresh database after view creation: {}", e);
                             }
                         }
                     }
@@ -222,11 +222,11 @@ fn create_view_from_state(context: &mut StateContext) -> Result<()> {
         if let Some(connection) = context.database_manager.get_connection(current_db) {
             match connection.execute(&create_sql, []) {
                 Ok(_) => {
-                    context.action_logger.log_info(&format!("Created view: {}", view_name));
+                    tracing::info!("Created view: {}", view_name);
                     return Ok(());
                 }
                 Err(e) => {
-                    context.action_logger.log_error(&format!("Failed to create view '{}': {}", view_name, e));
+                    tracing::error!("Failed to create view '{}': {}", view_name, e);
                     return Err(anyhow::anyhow!("Database error: {}", e));
                 }
             }
