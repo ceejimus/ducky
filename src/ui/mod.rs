@@ -2,14 +2,16 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap, Table, Row, Cell, TableState},
+    widgets::{Block, Borders, Paragraph, Wrap, Table, Row, Cell, TableState},
     Frame,
 };
 
 use crate::actions::ActionLogger;
 use crate::app::state::{ApplicationState, NavigationPanel, AppState, TableCreationStep};
+use crate::db::query::SortDirection;
 use crate::db::DatabaseManager;
 use crate::workflows::DatabaseWorkflows;
+use crate::state::{StateManager, StateTransition, StateKey};
 
 mod file_browser;
 use file_browser::{render_file_browser_popup, FileBrowser, detect_file_type, FileType};
@@ -17,11 +19,11 @@ use file_browser::{render_file_browser_popup, FileBrowser, detect_file_type, Fil
 pub struct App {
     state: ApplicationState,
     database_manager: DatabaseManager,
-    selected_db_index: usize,
-    selected_table_index: usize,
     file_browser: Option<FileBrowser>,
     show_file_browser: bool,
     action_logger: ActionLogger,
+    // State pattern manager
+    state_manager: StateManager,
 }
 
 impl App {
@@ -74,15 +76,15 @@ impl App {
         let mut app = Self {
             state: ApplicationState::new(),
             database_manager,
-            selected_db_index: 0,
-            selected_table_index: 0,
             file_browser: None,
             show_file_browser: false,
             action_logger,
+            // Initialize state pattern manager
+            state_manager: StateManager::new(),
         };
         
-        app.sync_selected_db_index();
-        app.sync_selected_table_index();
+        // Initialize state pattern components
+        app.init_state_pattern();
         
         // If we loaded a database via CLI, update the application state to reflect the selection
         if database_path.is_some() {
@@ -93,6 +95,91 @@ impl App {
         
         app
     }
+
+    fn init_state_pattern(&mut self) {
+        // Get current database for initialization
+        let current_db = self.database_manager.get_current_database().map(|s| s.to_string());
+        
+        // Initialize the context with current database
+        self.state_manager.get_context_mut().current_database = current_db;
+        
+        // Initialize state manager
+        self.state_manager.initialize(&mut self.database_manager);
+    }
+
+    fn sync_from_state_manager(&mut self) {
+        // Sync notifications from state manager to main app state
+        let new_notifications = self.state_manager.take_notifications();
+        for notification in new_notifications {
+            self.state.add_notification(notification);
+        }
+        
+        // Sync active panel from state pattern to legacy UI
+        let state_manager_active_state = self.state_manager.get_active_state().clone();
+        if let Some(expected_panel) = self.state_key_to_navigation_panel(state_manager_active_state) {
+            if self.state.active_panel != expected_panel {
+                log::debug!("UI: syncing active panel from {:?} to {:?}", self.state.active_panel, expected_panel);
+                self.state.active_panel = expected_panel;
+            }
+        }
+        
+        // Sync database selection changes
+        let context = self.state_manager.get_context();
+        if let Some(current_db) = &context.current_database {
+            if self.state.selected_database.as_ref() != Some(current_db) {
+                self.state.select_database(current_db.clone());
+            }
+        }
+        
+        // Sync table selection changes
+        if let Some(current_table) = &context.selected_table {
+            if self.state.selected_table.as_ref() != Some(current_table) {
+                self.state.selected_table = Some(current_table.clone());
+            }
+        }
+        
+        // Sync table data changes
+        if let Some(table_data) = &context.table_data {
+            self.state.table_data = Some(table_data.clone());
+            
+            // Initialize column order when table data is synced (matching legacy behavior)
+            self.state.initialize_column_order(table_data.columns.clone());
+            
+            // Initialize selected column if not set (needed for navigation and highlighting)
+            if self.state.selected_column.is_none() && !table_data.columns.is_empty() {
+                self.state.selected_column = Some(table_data.columns[0].clone());
+            }
+        }
+    }
+
+    fn sync_to_state_manager(&mut self) {
+        // Sync flash state from ApplicationState to AppContext
+        let context = self.state_manager.get_context_mut();
+        context.panel_flash_timer = self.state.panel_flash_timer;
+        context.flash_duration_ms = self.state.flash_duration_ms;
+        
+        // Map current NavigationPanel to StateKey and ensure StateManager is in correct state
+        if let Some(state_key) = self.navigation_panel_to_state_key(self.state.active_panel.clone()) {
+            self.state_manager.enter_state(state_key, &mut self.database_manager);
+        }
+    }
+    
+    fn navigation_panel_to_state_key(&self, panel: NavigationPanel) -> Option<StateKey> {
+        match panel {
+            NavigationPanel::DatabaseList => Some(StateKey::DatabaseSelect),
+            NavigationPanel::TableList => Some(StateKey::TableSelect),
+            _ => None, // Other panels not implemented in state pattern yet
+        }
+    }
+    
+    fn state_key_to_navigation_panel(&self, state_key: StateKey) -> Option<NavigationPanel> {
+        match state_key {
+            StateKey::DatabaseSelect => Some(NavigationPanel::DatabaseList),
+            StateKey::TableSelect => Some(NavigationPanel::TableList),
+            _ => None, // Other states not implemented in legacy UI
+        }
+    }
+
 
     pub fn handle_key(&mut self, key: KeyEvent) {
         // Handle file browser first if it's open
@@ -116,7 +203,7 @@ impl App {
                                             &mut self.state,
                                         );
                                         let _ = workflows.select_file(selected_path);
-                                        self.sync_selected_db_index();
+                                        self.state_manager.sync_all_states(&self.database_manager);
                                     }
                                     FileType::DataFile(_) => {
                                         // Handle data file import
@@ -135,7 +222,7 @@ impl App {
                                                     self.state.complete_table_creation(true);
                                                     // Force refresh to ensure UI has latest table data
                                                     self.refresh_current_database();
-                                                    self.sync_selected_table_index();
+                                                    self.state_manager.sync_all_states(&self.database_manager);
                                                     // Fetch data for the newly created table
                                                     self.fetch_table_data();
                                                 }
@@ -162,6 +249,8 @@ impl App {
             return;
         }
 
+        // hey claude! let's make creating a new database handled only when in database select panel
+        // then the sync database index can also go there
         // Handle database name input
         if self.state.is_entering_database_name {
             match key.code {
@@ -255,20 +344,6 @@ impl App {
             return;
         }
 
-        // Handle delete confirmation
-        if self.state.is_delete_confirmation_active() {
-            match key.code {
-                KeyCode::Esc => {
-                    self.state.cancel_delete_confirmation();
-                }
-                KeyCode::Char('d') => {
-                    self.confirm_delete();
-                    self.state.cancel_delete_confirmation();
-                }
-                _ => {}
-            }
-            return;
-        }
 
         // Handle table creation input
         if self.state.is_creating_table && self.state.table_creation_step == TableCreationStep::EnteringTableName {
@@ -294,21 +369,62 @@ impl App {
         }
 
 
-        // Normal key handling
+        // Try state pattern key handling first
+        log::debug!("UI: trying state pattern for key: {:?}, active_panel: {:?}", key.code, self.state.active_panel);
+        if let Some(transition) = self.state_manager.handle_key_event(key, &mut self.database_manager) {
+            log::debug!("UI: state pattern returned transition: {:?}", transition);
+            // Event was handled by state pattern - always sync state
+            self.sync_from_state_manager();
+            
+            // Handle specific transition types
+            match transition {
+                StateTransition::Exit => {
+                    // Handle exit request
+                    return; // Exit the application - this will be handled by the main loop
+                }
+                StateTransition::Stay | StateTransition::Push(_) | StateTransition::Pop => {
+                    // These are handled internally by state manager
+                    return;
+                }
+                StateTransition::To(state_key) => {
+                    // Legacy panel navigation for unimplemented state pattern panels
+                    log::debug!("UI: handling To({:?}) - navigating to legacy panel", state_key);
+                    match state_key {
+                        StateKey::TableDataViewer => {
+                            self.state.set_active_panel(NavigationPanel::MainContent);
+                            self.sync_to_state_manager();
+                        }
+                        StateKey::TableInspector => {
+                            self.state.set_active_panel(NavigationPanel::MainContent);
+                            self.sync_to_state_manager();
+                        }
+                        _ => {
+                            // Should not happen - state manager should handle implemented states internally
+                            panic!("UI: unexpected To({:?}) transition for implemented state", state_key);
+                        }
+                    }
+                    return;
+                }
+            }
+        } else {
+            log::debug!("UI: state pattern returned None, falling back to legacy handling for key: {:?}", key.code);
+        }
+
+        // Normal key handling (legacy fallback)
         match key.code {
             KeyCode::Tab => {
                 if self.state.inspect_mode {
                     // In inspect mode: cycle between schema and statistics sections
                     self.state.inspect_cycle_section();
-                } else if self.state.database_dropdown_expanded {
-                    // Close dropdown without making changes when Tab is pressed
-                    self.state.collapse_database_dropdown();
-                    self.state.set_dropdown_to_current_database(self.selected_db_index);
                 } else {
                     self.state.next_panel();
+                    self.sync_to_state_manager();
                 }
             }
-            KeyCode::BackTab => self.state.prev_panel(),
+            KeyCode::BackTab => {
+                self.state.prev_panel();
+                self.sync_to_state_manager();
+            }
             KeyCode::Esc => {
                 if self.state.is_modifying {
                     // Cancel modifying mode
@@ -318,10 +434,6 @@ impl App {
                 } else if self.state.inspect_mode {
                     // Exit inspect mode
                     self.state.exit_inspect_mode();
-                } else if self.state.database_dropdown_expanded {
-                    // Close dropdown without making changes when Escape is pressed
-                    self.state.collapse_database_dropdown();
-                    self.state.set_dropdown_to_current_database(self.selected_db_index);
                 }
                 // Note: Could add other escape behaviors here in the future
             }
@@ -386,14 +498,6 @@ impl App {
                     self.state.show_error("No table selected to create view from".to_string());
                 }
             }
-            KeyCode::Char('d') => {
-                // Start delete confirmation for current selection
-                self.start_delete_confirmation();
-            }
-            KeyCode::Char('D') => {
-                // Immediate delete without confirmation
-                self.immediate_delete();
-            }
             KeyCode::Char('q') => {
                 // Quit handled by main loop
             }
@@ -406,8 +510,7 @@ impl App {
                         &mut self.state,
                     );
                     let _ = workflows.disconnect_current_database();
-                    self.sync_selected_db_index();
-                    self.selected_table_index = 0;
+                    self.state_manager.sync_all_states(&self.database_manager);
                 }
             }
             KeyCode::Char('a') => {
@@ -448,9 +551,18 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('1') => self.state.set_left_panel(NavigationPanel::DatabaseList),
-            KeyCode::Char('2') => self.state.set_left_panel(NavigationPanel::TableList),
-            KeyCode::Char('3') => self.state.set_active_panel(NavigationPanel::MainContent),
+            KeyCode::Char('1') => {
+                self.state.set_left_panel(NavigationPanel::DatabaseList);
+                self.sync_to_state_manager();
+            }
+            KeyCode::Char('2') => {
+                self.state.set_left_panel(NavigationPanel::TableList);
+                self.sync_to_state_manager();
+            }
+            KeyCode::Char('3') => {
+                self.state.set_active_panel(NavigationPanel::MainContent);
+                self.sync_to_state_manager();
+            }
             _ => {}
         }
     }
@@ -487,22 +599,6 @@ impl App {
         }
 
         match self.state.active_panel {
-            NavigationPanel::DatabaseList => {
-                let databases = self.database_manager.get_databases();
-                if !self.state.database_dropdown_expanded {
-                    // Expand dropdown when first pressing up/down
-                    self.state.expand_database_dropdown(databases.len());
-                    self.state.set_dropdown_to_current_database(self.selected_db_index);
-                } else {
-                    // Navigate within dropdown
-                    self.state.dropdown_move_up();
-                }
-            }
-            NavigationPanel::TableList => {
-                if self.selected_table_index > 0 {
-                    self.selected_table_index -= 1;
-                }
-            }
             NavigationPanel::MainContent => {
                 // Move selected row up
                 if let Some(ref _data) = self.state.table_data {
@@ -548,25 +644,7 @@ impl App {
             return;
         }
 
-        let databases = self.database_manager.get_databases();
-        let current_tables = self.get_current_tables();
-
         match self.state.active_panel {
-            NavigationPanel::DatabaseList => {
-                if !self.state.database_dropdown_expanded {
-                    // Expand dropdown when first pressing up/down
-                    self.state.expand_database_dropdown(databases.len());
-                    self.state.set_dropdown_to_current_database(self.selected_db_index);
-                } else {
-                    // Navigate within dropdown
-                    self.state.dropdown_move_down(databases.len());
-                }
-            }
-            NavigationPanel::TableList => {
-                if self.selected_table_index < current_tables.len().saturating_sub(1) {
-                    self.selected_table_index += 1;
-                }
-            }
             NavigationPanel::MainContent => {
                 // Move selected row down
                 if let Some(ref data) = self.state.table_data {
@@ -615,12 +693,12 @@ impl App {
             NavigationPanel::TableList => {
                 // From table list, go to database widget  
                 self.state.set_left_panel(NavigationPanel::DatabaseList);
-                self.state.collapse_database_dropdown(); // Close dropdown if open
+                self.sync_to_state_manager();
             }
             NavigationPanel::DatabaseList => {
                 // From database list, underflow to table list
                 self.state.set_left_panel(NavigationPanel::TableList);
-                self.state.collapse_database_dropdown(); // Close dropdown if open
+                self.sync_to_state_manager();
             }
             _ => {}
         }
@@ -654,11 +732,6 @@ impl App {
         }
 
         match self.state.active_panel {
-            NavigationPanel::DatabaseList => {
-                // From database widget, go to tables widget
-                self.state.set_left_panel(NavigationPanel::TableList);
-                self.state.collapse_database_dropdown(); // Close dropdown if open
-            }
             NavigationPanel::MainContent => {
                 // Move selected column right
                 if let Some(ref data) = self.state.table_data {
@@ -666,10 +739,6 @@ impl App {
                     let visible_cols = 5; // Approximate - could be calculated from area
                     self.state.move_selected_right(data.columns.len(), visible_cols);
                 }
-            }
-            NavigationPanel::TableList => {
-                // From table list, overflow to database list
-                self.state.set_left_panel(NavigationPanel::DatabaseList);
             }
             _ => {}
         }
@@ -734,32 +803,6 @@ impl App {
         Vec::new()
     }
 
-    fn get_current_table_infos(&self) -> Vec<&crate::db::TableInfo> {
-        if let Some(current_db) = self.database_manager.get_current_database() {
-            if let Some(db_info) = self.database_manager.get_database_info(current_db) {
-                return db_info.tables.iter().collect();
-            }
-        }
-        Vec::new()
-    }
-
-    fn sync_selected_db_index(&mut self) {
-        if let Some(current_db) = self.database_manager.get_current_database() {
-            let databases = self.database_manager.get_databases();
-            if let Some(index) = databases.iter().position(|db| db.name == current_db) {
-                self.selected_db_index = index;
-            }
-        }
-    }
-
-    fn sync_selected_table_index(&mut self) {
-        if let Some(current_table) = &self.state.selected_table {
-            let current_tables = self.get_current_tables();
-            if let Some(index) = current_tables.iter().position(|table| table == current_table) {
-                self.selected_table_index = index;
-            }
-        }
-    }
 
     fn refresh_current_database(&mut self) {
         if let Some(current_db) = self.database_manager.get_current_database() {
@@ -1133,8 +1176,8 @@ impl App {
             .find(|(_, spec)| spec.column_name == column_name) {
             
             let sort_indicator = match sort_spec.direction {
-                crate::app::state::SortDirection::Ascending => "↑",
-                crate::app::state::SortDirection::Descending => "↓",
+                SortDirection::Ascending => "↑",
+                SortDirection::Descending => "↓",
             };
             
             // Show order number for multi-column sorts (1-indexed for user readability)
@@ -1371,49 +1414,8 @@ impl App {
         
         match self.state.active_panel {
             NavigationPanel::DatabaseList => {
-                if self.state.database_dropdown_expanded {
-                    // Select database from dropdown
-                    let db_name = {
-                        let databases = self.database_manager.get_databases();
-                        databases
-                            .get(self.state.dropdown_selected_index)
-                            .map(|db| db.name.clone())
-                    };
-
-                    if let Some(db_name) = db_name {
-                        let mut workflows = DatabaseWorkflows::new(
-                            &mut self.database_manager,
-                            &mut self.action_logger,
-                            &mut self.state,
-                        );
-                        let _ = workflows.select_database(db_name);
-                        self.sync_selected_db_index(); // Sync the index after selection
-                        self.selected_table_index = 0; // Reset table selection
-                    }
-                    
-                    // Close dropdown after selection
-                    self.state.collapse_database_dropdown();
-                } else {
-                    // Expand dropdown if not already expanded
-                    let databases = self.database_manager.get_databases();
-                    self.state.expand_database_dropdown(databases.len());
-                    self.state.set_dropdown_to_current_database(self.selected_db_index);
-                }
-            }
-            NavigationPanel::TableList => {
-                let current_tables = self.get_current_tables();
-                if let Some(table_name) = current_tables.get(self.selected_table_index) {
-                    let mut workflows = DatabaseWorkflows::new(
-                        &mut self.database_manager,
-                        &mut self.action_logger,
-                        &mut self.state,
-                    );
-                    let _ = workflows.select_table(table_name.clone());
-                    self.sync_selected_table_index();
-                    self.fetch_table_data();
-                    // Automatically activate table viewer after selecting table
-                    self.state.set_active_panel(NavigationPanel::MainContent);
-                }
+                // Database panel Enter handling is now handled by state pattern
+                // This fallback should not be reached when state pattern is active
             }
             NavigationPanel::MainContent => {
                 // Toggle column expansion when viewing table data (but not in modifying mode)
@@ -1469,89 +1471,33 @@ impl App {
                 &mut self.state,
             );
             let _ = workflows.select_database(db_name.clone());
-            self.sync_selected_db_index();
-            self.selected_table_index = 0;
+            self.state_manager.sync_all_states(&self.database_manager);
             self.state.show_success(format!("Created database '{db_name}'"));
         }
     }
 
     fn start_delete_confirmation(&mut self) {
-        match self.state.active_panel {
-            NavigationPanel::DatabaseList => {
-                let databases = self.database_manager.get_databases();
-                // Use dropdown index if dropdown is expanded, otherwise use selected index
-                let index = if self.state.database_dropdown_expanded {
-                    self.state.dropdown_selected_index
-                } else {
-                    self.selected_db_index
-                };
-                if let Some(db) = databases.get(index) {
-                    self.state.start_database_delete_confirmation(db.name.clone());
-                }
-            }
-            NavigationPanel::TableList => {
-                let current_tables = self.get_current_tables();
-                if let Some(table) = current_tables.get(self.selected_table_index) {
-                    self.state.start_table_delete_confirmation(table.clone());
-                }
-            }
-            _ => {}
-        }
+        // Table deletion not implemented in state pattern yet
+        todo!("Table deletion should be moved to state pattern")
     }
 
     fn immediate_delete(&mut self) {
-        match self.state.active_panel {
-            NavigationPanel::DatabaseList => {
-                let db_name = {
-                    let databases = self.database_manager.get_databases();
-                    // Use dropdown index if dropdown is expanded, otherwise use selected index
-                    let index = if self.state.database_dropdown_expanded {
-                        self.state.dropdown_selected_index
-                    } else {
-                        self.selected_db_index
-                    };
-                    databases.get(index).map(|db| db.name.clone())
-                };
-                if let Some(name) = db_name {
-                    self.delete_database(&name);
-                }
-            }
-            NavigationPanel::TableList => {
-                let table_name = {
-                    let current_tables = self.get_current_tables();
-                    current_tables.get(self.selected_table_index).cloned()
-                };
-                if let Some(name) = table_name {
-                    self.delete_table(&name);
-                }
-            }
-            _ => {}
-        }
+        // Table deletion not implemented in state pattern yet
+        todo!("Table deletion should be moved to state pattern")
     }
 
     fn confirm_delete(&mut self) {
         let (item_type, item_name) = match &self.state.delete_confirmation {
-            crate::app::state::DeleteConfirmationState::Database(name) => ("database", name.clone()),
             crate::app::state::DeleteConfirmationState::Table(name) => ("table", name.clone()),
             _ => return,
         };
         
         match item_type {
-            "database" => self.delete_database(&item_name),
             "table" => self.delete_table(&item_name),
             _ => {}
         }
     }
 
-    fn delete_database(&mut self, db_name: &str) {
-        if let Err(e) = self.database_manager.remove_database(db_name) {
-            self.state.show_error(format!("Failed to delete database: {e}"));
-        } else {
-            self.sync_selected_db_index();
-            self.selected_table_index = 0;
-            self.state.show_success(format!("Deleted database '{db_name}'"));
-        }
-    }
 
     fn delete_table(&mut self, table_name: &str) {
         if let Err(e) = self.database_manager.remove_table(table_name) {
@@ -1564,7 +1510,7 @@ impl App {
                     self.state.selected_table = None;
                 }
             }
-            self.sync_selected_table_index();
+            self.state_manager.sync_all_states(&self.database_manager);
             self.state.show_success(format!("Deleted table '{table_name}'"));
         }
     }
@@ -1673,6 +1619,9 @@ impl App {
                 ])
                 .split(chunks[1]);
 
+            // Sync flash state before rendering to ensure current flash status
+            self.sync_to_state_manager();
+            
             // Left sidebar (combined database + table list)
             self.render_left_sidebar(f, main_chunks[0]);
 
@@ -1693,10 +1642,7 @@ impl App {
             }
         }
 
-        // Render database dropdown overlay if expanded
-        if self.state.database_dropdown_expanded {
-            self.render_database_dropdown_overlay(f, f.area());
-        }
+        // Database dropdown overlay is now handled by state pattern
 
         // Render database name input popup
         if self.state.is_entering_database_name {
@@ -1712,9 +1658,14 @@ impl App {
             self.render_view_name_input(f, f.area());
         }
 
-        // Render delete confirmation popup
+        // Render delete confirmation popup (legacy)
         if self.state.is_delete_confirmation_active() {
             self.render_delete_confirmation(f, f.area());
+        }
+        
+        // Render state pattern modals
+        if self.state_manager.has_active_modal() {
+            self.state_manager.render_top_modal(f, f.area(), &self.database_manager);
         }
     }
 
@@ -1728,11 +1679,11 @@ impl App {
             ])
             .split(area);
 
-        // Render database dropdown in top area
-        self.render_database_dropdown(f, sidebar_chunks[0]);
+        // Render database select using state pattern
+        self.state_manager.render_database_select(f, sidebar_chunks[0], &self.database_manager);
         
-        // Render table list in bottom area
-        self.render_table_list_compact(f, sidebar_chunks[1]);
+        // Render table list in bottom area using state pattern
+        self.state_manager.render_table_list(f, sidebar_chunks[1], &self.database_manager);
     }
 
     fn render_database_dropdown(&self, f: &mut Frame, area: Rect) {
@@ -1753,55 +1704,6 @@ impl App {
             .style(Style::default().fg(Color::White));
 
         f.render_widget(dropdown, area);
-    }
-
-    fn render_table_list_compact(&self, f: &mut Frame, area: Rect) {
-        let current_table_infos = self.get_current_table_infos();
-        
-        let items: Vec<ListItem> = current_table_infos
-            .iter()
-            .enumerate()
-            .map(|(i, table_info)| {
-                let is_selected = i == self.selected_table_index;
-                let is_current = self.state.selected_table.as_ref() == Some(&table_info.name);
-                
-                // Choose icon based on table type
-                let icon = if table_info.table_type == "VIEW" {
-                    "[v]"  // View indicator
-                } else {
-                    "[t]"  // Table indicator
-                };
-                
-                let style = if is_selected {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
-                } else if is_current {
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                };
-                
-                let selection_indicator = if is_current { "● " } else { "  " };
-                let display_name = format!("{}{} {}", selection_indicator, icon, table_info.name);
-                ListItem::new(display_name).style(style)
-            })
-            .collect();
-
-        let border_style = self.get_panel_border_style(NavigationPanel::TableList);
-
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .title("Tables")
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            )
-            .style(Style::default().fg(Color::White));
-
-        f.render_widget(list, area);
     }
 
     fn get_panel_border_style(&self, panel: NavigationPanel) -> Style {
@@ -1873,8 +1775,8 @@ impl App {
                     let mut sort_parts = Vec::new();
                     for sort_spec in &self.state.sort_columns {
                         let direction = match sort_spec.direction {
-                            crate::app::state::SortDirection::Ascending => "ASC",
-                            crate::app::state::SortDirection::Descending => "DESC",
+                            SortDirection::Ascending => "ASC",
+                            SortDirection::Descending => "DESC",
                         };
                         sort_parts.push(format!("{} {}", sort_spec.column_name, direction));
                     }
@@ -2039,8 +1941,8 @@ impl App {
                 let (sort_order, sort_direction) = match sort_info {
                     Some((order, direction)) => {
                         let dir_str = match direction {
-                            crate::app::state::SortDirection::Ascending => "ASC",
-                            crate::app::state::SortDirection::Descending => "DESC",
+                            SortDirection::Ascending => "ASC",
+                            SortDirection::Descending => "DESC",
                         };
                         (order.to_string(), dir_str.to_string())
                     },
@@ -2605,99 +2507,6 @@ impl App {
         f.render_widget(popup, popup_area);
     }
 
-    fn render_database_dropdown_overlay(&self, f: &mut Frame, area: Rect) {
-        let databases = self.database_manager.get_databases();
-        if databases.is_empty() {
-            return;
-        }
-
-        // Calculate dropdown area - positioned over the database dropdown widget
-        
-        // Calculate the database dropdown position within the sidebar
-        let sidebar_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // Header
-                Constraint::Min(0),    // Main content
-                Constraint::Length(3), // Status bar
-            ])
-            .split(area);
-        
-        let content_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(30), // Left sidebar
-                Constraint::Percentage(70), // Table viewer
-            ])
-            .split(sidebar_chunks[1]);
-        
-        let left_sidebar_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // Database dropdown area
-                Constraint::Min(0),    // Table list area
-            ])
-            .split(content_chunks[0]);
-
-        // Position dropdown list below the database dropdown widget
-        let dropdown_area = Rect {
-            x: left_sidebar_chunks[0].x,
-            y: left_sidebar_chunks[0].y + left_sidebar_chunks[0].height,
-            width: left_sidebar_chunks[0].width,
-            height: (databases.len() as u16 + 2).min(10), // Limit height, +2 for borders
-        };
-
-        // Ensure dropdown doesn't go beyond screen bounds
-        let dropdown_area = Rect {
-            x: dropdown_area.x,
-            y: dropdown_area.y,
-            width: dropdown_area.width,
-            height: dropdown_area.height.min(area.height.saturating_sub(dropdown_area.y)),
-        };
-
-        // Create dropdown items
-        let items: Vec<ListItem> = databases
-            .iter()
-            .enumerate()
-            .map(|(i, db)| {
-                let is_selected = i == self.state.dropdown_selected_index;
-                let is_current = self.database_manager.get_current_database()
-                    .is_some_and(|current| current == db.name);
-                
-                let style = if is_selected {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .bg(Color::Blue)
-                        .add_modifier(Modifier::BOLD)
-                } else if is_current {
-                    Style::default()
-                        .fg(Color::Green)
-                        .bg(Color::Black)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                        .fg(Color::White)
-                        .bg(Color::Black)
-                };
-                
-                let selection_indicator = if is_current { "● " } else { "  " };
-                let display_name = format!("{}🗄️  {}", selection_indicator, db.name);
-                ListItem::new(display_name).style(style)
-            })
-            .collect();
-
-        // Create dropdown list widget
-        let dropdown_list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            )
-            .style(Style::default().fg(Color::White).bg(Color::Black));
-
-        // Render with opaque black background to cover underlying widgets
-        f.render_widget(dropdown_list, dropdown_area);
-    }
 }
 
 /// Truncate text to fit within a specific width, adding "..." if needed

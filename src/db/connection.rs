@@ -4,6 +4,7 @@ use anyhow::{Result, Context};
 use duckdb::Connection;
 
 use super::{DatabaseInfo, test_connection, get_table_list};
+use super::query::{QueryExecutor, TableQuerySpec, QueryResult};
 
 pub struct DatabaseManager {
     connections: HashMap<String, Connection>,
@@ -224,6 +225,15 @@ impl DatabaseManager {
             Ok(())
         } else {
             Err(anyhow::anyhow!("Database '{}' not found", database_name))
+        }
+    }
+
+    pub fn fetch_table_data(&self, spec: &TableQuerySpec) -> Result<QueryResult> {
+        if let Some(connection) = self.get_current_connection() {
+            let executor = QueryExecutor::new(connection.try_clone()?);
+            executor.fetch_table_data(spec)
+        } else {
+            Err(anyhow::anyhow!("No database connection available"))
         }
     }
 }

@@ -1,5 +1,5 @@
 
-use crate::db::query::QueryResult;
+use crate::db::query::{QueryResult, SortColumnSpec, SortDirection};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppState {
@@ -18,23 +18,6 @@ pub enum NotificationType {
     Info,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SortDirection {
-    Ascending,
-    Descending,
-}
-
-impl Default for SortDirection {
-    fn default() -> Self {
-        Self::Ascending
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SortColumnSpec {
-    pub column_name: String,
-    pub direction: SortDirection,
-}
 
 #[derive(Debug, Clone)]
 pub struct Notification {
@@ -131,9 +114,6 @@ pub struct ApplicationState {
     pub page_size: usize,
     // Cache last table area height for navigation calculations
     pub last_table_area_height: u16,
-    // Database dropdown state
-    pub database_dropdown_expanded: bool,
-    pub dropdown_selected_index: usize,
     // Navigation state - track which left panel widget was last active
     pub last_left_panel: NavigationPanel,
     // Flash effect for panel selection
@@ -217,8 +197,6 @@ impl ApplicationState {
             selected_column: None,
             page_size: 20,
             last_table_area_height: 20, // Default
-            database_dropdown_expanded: false,
-            dropdown_selected_index: 0,
             last_left_panel: NavigationPanel::DatabaseList,
             panel_flash_timer: None,
             flash_duration_ms: 1000, // 1.0 second
@@ -515,34 +493,6 @@ impl ApplicationState {
         }
     }
 
-    // Database dropdown methods
-    pub fn expand_database_dropdown(&mut self, num_databases: usize) {
-        self.database_dropdown_expanded = true;
-        // Ensure dropdown_selected_index is within bounds
-        if self.dropdown_selected_index >= num_databases {
-            self.dropdown_selected_index = 0;
-        }
-    }
-
-    pub fn collapse_database_dropdown(&mut self) {
-        self.database_dropdown_expanded = false;
-    }
-
-    pub fn dropdown_move_up(&mut self) {
-        if self.dropdown_selected_index > 0 {
-            self.dropdown_selected_index -= 1;
-        }
-    }
-
-    pub fn dropdown_move_down(&mut self, num_databases: usize) {
-        if self.dropdown_selected_index < num_databases.saturating_sub(1) {
-            self.dropdown_selected_index += 1;
-        }
-    }
-
-    pub fn set_dropdown_to_current_database(&mut self, current_db_index: usize) {
-        self.dropdown_selected_index = current_db_index;
-    }
 
     // Left panel navigation helper
     pub fn set_left_panel(&mut self, panel: NavigationPanel) {
@@ -721,12 +671,18 @@ impl ApplicationState {
         }
     }
 
-    pub fn move_selected_right(&mut self, _max_cols: usize, _visible_cols: usize) {
+    pub fn move_selected_right(&mut self, _max_cols: usize, visible_cols: usize) {
         if let Some(ref current_col) = self.selected_column.clone() {
             if let Some(next_col) = self.get_next_visible_column(current_col) {
                 self.selected_column = Some(next_col);
-                // Ensure new selection is visible
-                self.ensure_selected_column_visible();
+                
+                // Restore the original right-edge scrolling logic
+                if let Some(selected_idx) = self.get_selected_column_index() {
+                    // Scroll right if selected col goes right of visible area
+                    if selected_idx >= self.scroll_x + visible_cols {
+                        self.scroll_x = selected_idx - visible_cols + 1;
+                    }
+                }
             }
         } else {
             // No selection, select first visible column

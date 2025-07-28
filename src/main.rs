@@ -4,6 +4,7 @@ mod db;
 mod actions;
 mod workflows;
 mod import;
+mod state;
 
 use std::io;
 use std::path::PathBuf;
@@ -47,10 +48,14 @@ fn main() -> io::Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Setting default subscriber failed");
     
+    // Set up file logger for debug messages
+    setup_file_logger(args.verbose);
+    
     // Set up panic handler to log to file
     setup_panic_handler();
     
     info!("Starting Ducky - DuckDB TUI");
+    log::info!("File logger initialized");
     
     // Handle non-interface mode
     if args.no_interface {
@@ -111,6 +116,29 @@ fn setup_panic_handler() {
         // Also log to stderr for immediate visibility
         eprintln!("{}", panic_log);
     }));
+}
+
+fn setup_file_logger(verbose: bool) {
+    use simplelog::*;
+    use std::fs::OpenOptions;
+    
+    let log_level = if verbose {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+    
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("ducky-debug.log")
+        .expect("Failed to open debug log file");
+    
+    WriteLogger::init(
+        log_level,
+        Config::default(),
+        log_file,
+    ).expect("Failed to initialize file logger");
 }
 
 fn handle_no_interface_mode(database: Option<PathBuf>) -> io::Result<()> {

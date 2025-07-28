@@ -13,6 +13,48 @@ pub struct QueryResult {
     pub execution_time_ms: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SortDirection {
+    Ascending,
+    Descending,
+}
+
+impl Default for SortDirection {
+    fn default() -> Self {
+        Self::Ascending
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SortColumnSpec {
+    pub column_name: String,
+    pub direction: SortDirection,
+}
+
+/// Specification for table data queries - passed to db module to avoid direct context access
+#[derive(Debug, Clone)]
+pub struct TableQuerySpec {
+    pub table_name: String,
+    pub sort_columns: Vec<SortColumnSpec>,
+    pub column_filters: HashMap<String, String>,
+    pub visible_column_names: Vec<String>, // Already in desired order
+    pub original_column_names: Vec<String>, // For SQL generation
+    pub limit: Option<usize>,
+}
+
+impl TableQuerySpec {
+    pub fn new(table_name: String) -> Self {
+        Self {
+            table_name,
+            sort_columns: Vec::new(),
+            column_filters: HashMap::new(),
+            visible_column_names: Vec::new(),
+            original_column_names: Vec::new(),
+            limit: Some(1000), // Default limit
+        }
+    }
+}
+
 impl QueryResult {
     pub fn new() -> Self {
         Self {
@@ -36,30 +78,61 @@ impl QueryExecutor {
     pub fn execute_query(&self, sql: &str) -> Result<QueryResult> {
         let start_time = std::time::Instant::now();
         
-        let mut stmt = self.connection.prepare(sql)?;
-        let column_count = stmt.column_count();
+        log::debug!("Executing SQL: {}", sql);
         
-        // Get column names
+        // Prepare statement and execute query
+        let mut stmt = self.connection.prepare(sql)?;
+        let mut rows = stmt.query([])?;
+        
+        // Get column count from the executed query results (not the statement)
+        let column_count = rows.as_ref().unwrap().column_count();
+        
+        // Get column names from the query results
         let mut columns = Vec::new();
         for i in 0..column_count {
-            if let Ok(name) = stmt.column_name(i) {
-                columns.push(name.to_string());
-            }
+            let column_name = rows.as_ref().unwrap().column_name(i)
+                .unwrap_or(&format!("column_{}", i))
+                .to_string();
+            columns.push(column_name);
         }
         
-        // Execute query and collect results
-        let rows = stmt.query_map([], |row| {
+        // Collect all rows
+        let mut result_rows = Vec::new();
+        while let Some(row) = rows.next()? {
             let mut row_data = Vec::new();
             for i in 0..column_count {
-                let value = format_column_value(row, i)?;
+                // Convert each column value to string with safer error handling
+                // Try f64 first to handle NaN values, then other types
+                let value = match row.get::<_, f64>(i) {
+                    Ok(v) => {
+                        if v.is_nan() {
+                            "NaN".to_string()
+                        } else if v.is_infinite() {
+                            if v.is_sign_positive() { "Infinity".to_string() } else { "-Infinity".to_string() }
+                        } else {
+                            v.to_string()
+                        }
+                    },
+                    Err(_) => match row.get::<_, String>(i) {
+                        Ok(v) => v,
+                        Err(_) => match row.get::<_, i64>(i) {
+                            Ok(v) => v.to_string(),
+                            Err(_) => match row.get::<_, bool>(i) {
+                                Ok(v) => v.to_string(),
+                                Err(_) => {
+                                    // Try to get as raw value or default to NULL
+                                    match row.get_ref(i) {
+                                        Ok(value_ref) => format!("{value_ref:?}"),
+                                        Err(_) => "NULL".to_string(),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
                 row_data.push(value);
             }
-            Ok(row_data)
-        })?;
-        
-        let mut result_rows = Vec::new();
-        for row in rows {
-            result_rows.push(row?);
+            result_rows.push(row_data);
         }
         
         let execution_time = start_time.elapsed();
@@ -118,6 +191,59 @@ impl QueryExecutor {
         Ok(count)
     }
 
+    pub fn fetch_table_data(&self, spec: &TableQuerySpec) -> Result<QueryResult> {
+        let sql = self.build_query_sql(spec);
+        self.execute_query(&sql)
+    }
+
+    fn build_query_sql(&self, spec: &TableQuerySpec) -> String {
+        let mut sql = String::new();
+        
+        // Build SELECT clause with visible columns in desired order
+        if spec.visible_column_names.is_empty() {
+            sql.push_str(&format!("SELECT * FROM {}", spec.table_name));
+        } else {
+            let columns_sql = spec.visible_column_names.join(", ");
+            sql.push_str(&format!("SELECT {} FROM {}", columns_sql, spec.table_name));
+        }
+        
+        // Add WHERE clause for filters
+        if !spec.column_filters.is_empty() {
+            let mut filter_parts = Vec::new();
+            for (column_name, filter_text) in &spec.column_filters {
+                // Use the filter text directly as SQL (user responsibility for syntax)
+                filter_parts.push(format!("{} {}", column_name, filter_text));
+            }
+            
+            if !filter_parts.is_empty() {
+                sql.push_str(&format!(" WHERE {}", filter_parts.join(" AND ")));
+            }
+        }
+        
+        // Add ORDER BY clause for sorting
+        if !spec.sort_columns.is_empty() {
+            let mut sort_parts = Vec::new();
+            for sort_spec in &spec.sort_columns {
+                let direction = match sort_spec.direction {
+                    SortDirection::Ascending => "ASC",
+                    SortDirection::Descending => "DESC",
+                };
+                sort_parts.push(format!("{} {}", sort_spec.column_name, direction));
+            }
+            
+            if !sort_parts.is_empty() {
+                sql.push_str(&format!(" ORDER BY {}", sort_parts.join(", ")));
+            }
+        }
+        
+        // Add LIMIT clause
+        if let Some(limit) = spec.limit {
+            sql.push_str(&format!(" LIMIT {}", limit));
+        }
+        
+        sql
+    }
+
     pub fn get_table_columns(&self, table_name: &str) -> Result<Vec<ColumnInfo>> {
         let sql = format!(
             "SELECT column_name, data_type, is_nullable, column_default 
@@ -153,35 +279,6 @@ pub struct ColumnInfo {
     pub default_value: Option<String>,
 }
 
-fn format_column_value(row: &Row, index: usize) -> Result<String, duckdb::Error> {
-    // Try to get the value as different types and format appropriately
-    match row.get::<_, Option<String>>(index) {
-        Ok(Some(s)) => Ok(s),
-        Ok(None) => Ok("NULL".to_string()),
-        Err(_) => {
-            // Try as integer
-            match row.get::<_, Option<i64>>(index) {
-                Ok(Some(i)) => Ok(i.to_string()),
-                Ok(None) => Ok("NULL".to_string()),
-                Err(_) => {
-                    // Try as float
-                    match row.get::<_, Option<f64>>(index) {
-                        Ok(Some(f)) => Ok(f.to_string()),
-                        Ok(None) => Ok("NULL".to_string()),
-                        Err(_) => {
-                            // Try as boolean
-                            match row.get::<_, Option<bool>>(index) {
-                                Ok(Some(b)) => Ok(b.to_string()),
-                                Ok(None) => Ok("NULL".to_string()),
-                                Err(_) => Ok("?".to_string()),
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 pub fn build_filter_query(
     table_name: &str,
