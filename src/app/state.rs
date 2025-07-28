@@ -119,14 +119,6 @@ pub struct ApplicationState {
     // Flash effect for panel selection
     pub panel_flash_timer: Option<std::time::Instant>,
     pub flash_duration_ms: u64,
-    // Delete confirmation state
-    pub delete_confirmation: DeleteConfirmationState,
-    // Database name input state
-    pub is_entering_database_name: bool,
-    pub new_database_name: String,
-    // Save filename input state
-    pub is_entering_save_filename: bool,
-    pub save_filename: String,
     // Save view input state
     pub is_entering_view_name: bool,
     pub new_view_name: String,
@@ -165,18 +157,6 @@ pub enum TableCreationStep {
     ImportingData,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeleteConfirmationState {
-    None,
-    Database(String), // Database name to delete
-    Table(String),    // Table name to delete
-}
-
-impl Default for DeleteConfirmationState {
-    fn default() -> Self {
-        Self::None
-    }
-}
 
 impl ApplicationState {
     pub fn new() -> Self {
@@ -200,11 +180,6 @@ impl ApplicationState {
             last_left_panel: NavigationPanel::DatabaseList,
             panel_flash_timer: None,
             flash_duration_ms: 1000, // 1.0 second
-            delete_confirmation: DeleteConfirmationState::None,
-            is_entering_database_name: false,
-            new_database_name: String::new(),
-            is_entering_save_filename: false,
-            save_filename: String::new(),
             is_entering_view_name: false,
             new_view_name: String::new(),
             expanded_columns: std::collections::HashSet::new(),
@@ -530,60 +505,8 @@ impl ApplicationState {
         }
     }
 
-    // Delete confirmation methods
-    pub fn start_database_delete_confirmation(&mut self, database_name: String) {
-        self.delete_confirmation = DeleteConfirmationState::Database(database_name);
-    }
 
-    pub fn start_table_delete_confirmation(&mut self, table_name: String) {
-        self.delete_confirmation = DeleteConfirmationState::Table(table_name);
-    }
 
-    pub fn cancel_delete_confirmation(&mut self) {
-        self.delete_confirmation = DeleteConfirmationState::None;
-    }
-
-    pub fn is_delete_confirmation_active(&self) -> bool {
-        !matches!(self.delete_confirmation, DeleteConfirmationState::None)
-    }
-
-    // Database name input methods
-    pub fn start_database_name_input(&mut self) {
-        self.is_entering_database_name = true;
-        self.new_database_name.clear();
-    }
-
-    pub fn cancel_database_name_input(&mut self) {
-        self.is_entering_database_name = false;
-        self.new_database_name.clear();
-    }
-
-    pub fn add_char_to_database_name(&mut self, c: char) {
-        self.new_database_name.push(c);
-    }
-
-    pub fn remove_char_from_database_name(&mut self) {
-        self.new_database_name.pop();
-    }
-
-    // Save filename input methods
-    pub fn start_save_filename_input(&mut self) {
-        self.is_entering_save_filename = true;
-        self.save_filename.clear();
-    }
-
-    pub fn cancel_save_filename_input(&mut self) {
-        self.is_entering_save_filename = false;
-        self.save_filename.clear();
-    }
-
-    pub fn add_char_to_save_filename(&mut self, c: char) {
-        self.save_filename.push(c);
-    }
-
-    pub fn remove_char_from_save_filename(&mut self) {
-        self.save_filename.pop();
-    }
 
     // View name input methods
     pub fn start_view_name_input(&mut self) {

@@ -3,6 +3,7 @@ use crate::state::{AppContext, DatabaseSelectPanel, StateTransition, UIState, St
 use crate::state::states::TableListPanel;
 use crate::state::states::delete_confirmation_modal::DeleteConfirmationModal;
 use crate::state::states::database_name_input_modal::DatabaseNameInputModal;
+use crate::state::states::database_save_modal::DatabaseSaveModal;
 use crate::state::{ModalKey};
 use crossterm::event::KeyEvent;
 
@@ -116,6 +117,9 @@ impl StateManager {
                     }
                     ModalKey::DatabaseNameInput => {
                         Box::new(DatabaseNameInputModal::new())
+                    }
+                    ModalKey::DatabaseSave => {
+                        Box::new(DatabaseSaveModal::new())
                     }
                 };
                 

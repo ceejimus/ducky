@@ -210,6 +210,37 @@ impl DatabaseSelectPanel {
         }
         StateTransition::Stay
     }
+
+    fn disconnect_current_database(&self, context: &mut AppContext, db_manager: &mut DatabaseManager) -> StateTransition {
+        // Check if there's a current database selected
+        let current_db = match db_manager.get_current_database() {
+            Some(db) => db.to_string(),
+            None => {
+                context.show_error("No database currently selected".to_string());
+                return StateTransition::Stay;
+            }
+        };
+
+        // Cannot disconnect from default memory database (matching legacy logic)
+        if current_db == "memory" {
+            context.show_error("Cannot disconnect from default memory database".to_string());
+            return StateTransition::Stay;
+        }
+
+        // Perform the disconnect operation
+        match db_manager.remove_database(&current_db) {
+            Ok(()) => {
+                context.show_info(format!("Disconnected from: {current_db}"));
+                context.current_database = None;
+                context.selected_table = None;
+            }
+            Err(e) => {
+                context.show_error(format!("Failed to disconnect from database: {e}"));
+            }
+        }
+        
+        StateTransition::Stay
+    }
 }
 
 impl UIState for DatabaseSelectPanel {
@@ -322,6 +353,23 @@ impl UIState for DatabaseSelectPanel {
             KeyCode::Char('n') => {
                 // Start database name input (matching legacy behavior)
                 StateTransition::Push(crate::state::ModalKey::DatabaseNameInput)
+            }
+            KeyCode::Char('s') => {
+                // Start database save (matching legacy behavior)
+                if db_manager.get_current_database().is_some() {
+                    StateTransition::Push(crate::state::ModalKey::DatabaseSave)
+                } else {
+                    context.show_error("No database selected to save".to_string());
+                    StateTransition::Stay
+                }
+            }
+            KeyCode::Char('x') => {
+                // Disconnect current database (matching legacy 'x' key behavior)
+                if db_manager.get_current_database().is_some() {
+                    self.disconnect_current_database(context, db_manager)
+                } else {
+                    StateTransition::Stay
+                }
             }
             KeyCode::Char('q') => StateTransition::Exit,
             _ => StateTransition::Stay, // Ignore unhandled keys

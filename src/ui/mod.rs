@@ -249,53 +249,7 @@ impl App {
             return;
         }
 
-        // hey claude! let's make creating a new database handled only when in database select panel
-        // then the sync database index can also go there
-        // Handle database name input
-        if self.state.is_entering_database_name {
-            match key.code {
-                KeyCode::Esc => {
-                    self.state.cancel_database_name_input();
-                }
-                KeyCode::Enter => {
-                    if !self.state.new_database_name.trim().is_empty() {
-                        self.create_database_with_name();
-                        self.state.cancel_database_name_input();
-                    }
-                }
-                KeyCode::Backspace => {
-                    self.state.remove_char_from_database_name();
-                }
-                KeyCode::Char(c) => {
-                    self.state.add_char_to_database_name(c);
-                }
-                _ => {}
-            }
-            return;
-        }
 
-        // Handle save filename input
-        if self.state.is_entering_save_filename {
-            match key.code {
-                KeyCode::Esc => {
-                    self.state.cancel_save_filename_input();
-                }
-                KeyCode::Enter => {
-                    if !self.state.save_filename.trim().is_empty() {
-                        self.save_current_database_to_file();
-                        self.state.cancel_save_filename_input();
-                    }
-                }
-                KeyCode::Backspace => {
-                    self.state.remove_char_from_save_filename();
-                }
-                KeyCode::Char(c) => {
-                    self.state.add_char_to_save_filename(c);
-                }
-                _ => {}
-            }
-            return;
-        }
         // Handle view name input
         if self.state.is_entering_view_name {
             match key.code {
@@ -477,18 +431,6 @@ impl App {
                     self.open_file_browser();
                 }
             }
-            KeyCode::Char('n') => {
-                // Start database name input
-                self.state.start_database_name_input();
-            }
-            KeyCode::Char('s') => {
-                // Start save database to file
-                if self.database_manager.get_current_database().is_some() {
-                    self.state.start_save_filename_input();
-                } else {
-                    self.state.show_error("No database selected to save".to_string());
-                }
-            }
             KeyCode::Char('v') => {
                 // Start save view (only in table viewer or inspector mode)
                 if (self.state.active_panel == NavigationPanel::MainContent || self.state.inspect_mode) && 
@@ -500,18 +442,6 @@ impl App {
             }
             KeyCode::Char('q') => {
                 // Quit handled by main loop
-            }
-            KeyCode::Char('x') => {
-                // Disconnect current database (moved from 'd')
-                if self.database_manager.get_current_database().is_some() {
-                    let mut workflows = DatabaseWorkflows::new(
-                        &mut self.database_manager,
-                        &mut self.action_logger,
-                        &mut self.state,
-                    );
-                    let _ = workflows.disconnect_current_database();
-                    self.state_manager.sync_all_states(&self.database_manager);
-                }
             }
             KeyCode::Char('a') => {
                 // Toggle column in sort chain as ascending (only in table viewer)
@@ -794,14 +724,6 @@ impl App {
         }
     }
 
-    fn get_current_tables(&self) -> Vec<String> {
-        if let Some(current_db) = self.database_manager.get_current_database() {
-            if let Some(db_info) = self.database_manager.get_database_info(current_db) {
-                return db_info.tables.iter().map(|t| t.name.clone()).collect();
-            }
-        }
-        Vec::new()
-    }
 
 
     fn refresh_current_database(&mut self) {
@@ -1458,56 +1380,9 @@ impl App {
         }
     }
 
-    fn create_database_with_name(&mut self) {
-        let db_name = self.state.new_database_name.clone();
-        
-        // Create in-memory database with custom name
-        if let Err(e) = self.database_manager.add_database(db_name.clone(), ":memory:".to_string()) {
-            self.state.show_error(format!("Failed to create database: {e}"));
-        } else {
-            let mut workflows = DatabaseWorkflows::new(
-                &mut self.database_manager,
-                &mut self.action_logger,
-                &mut self.state,
-            );
-            let _ = workflows.select_database(db_name.clone());
-            self.state_manager.sync_all_states(&self.database_manager);
-            self.state.show_success(format!("Created database '{db_name}'"));
-        }
-    }
 
 
 
-    fn save_current_database_to_file(&mut self) {
-        if let Some(current_db) = self.database_manager.get_current_database() {
-            let db_name = current_db.to_string();
-            let filename = self.state.save_filename.clone();
-            
-            // Add .db extension if not present
-            let file_path = if filename.ends_with(".db") || filename.ends_with(".duckdb") {
-                filename
-            } else {
-                format!("{filename}.db")
-            };
-            
-            let mut workflows = DatabaseWorkflows::new(
-                &mut self.database_manager,
-                &mut self.action_logger,
-                &mut self.state,
-            );
-            
-            match workflows.save_database_to_file(db_name, std::path::PathBuf::from(file_path)) {
-                Ok(_) => {
-                    // Success message handled by workflow
-                }
-                Err(e) => {
-                    self.state.show_error(format!("Failed to save database: {e}"));
-                }
-            }
-        } else {
-            self.state.show_error("No database selected to save".to_string());
-        }
-    }
 
     fn create_view_from_current_state(&mut self) {
         if let (Some(connection), Some(table_name)) = (
@@ -1607,15 +1482,7 @@ impl App {
 
         // Database dropdown overlay is now handled by state pattern
 
-        // Render database name input popup
-        if self.state.is_entering_database_name {
-            self.render_database_name_input(f, f.area());
-        }
 
-        // Render save filename input popup
-        if self.state.is_entering_save_filename {
-            self.render_save_filename_input(f, f.area());
-        }
         // Render view name input popup
         if self.state.is_entering_view_name {
             self.render_view_name_input(f, f.area());
@@ -1645,25 +1512,6 @@ impl App {
         self.state_manager.render_table_list(f, sidebar_chunks[1], &self.database_manager);
     }
 
-    fn render_database_dropdown(&self, f: &mut Frame, area: Rect) {
-        let current_db = self.database_manager.get_current_database().unwrap_or("none");
-        
-        // Always render collapsed state here - expanded state is handled as overlay
-        let content = format!("DB: [{current_db}]");
-        
-        let border_style = self.get_panel_border_style(NavigationPanel::DatabaseList);
-
-        let dropdown = Paragraph::new(content)
-            .block(
-                Block::default()
-                    .title("Database")
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            )
-            .style(Style::default().fg(Color::White));
-
-        f.render_widget(dropdown, area);
-    }
 
     fn get_panel_border_style(&self, panel: NavigationPanel) -> Style {
         let is_active = self.state.active_panel == panel;
@@ -2299,81 +2147,7 @@ impl App {
         }
     }
 
-    fn render_database_name_input(&self, f: &mut Frame, area: Rect) {
-        // Create centered popup
-        let popup_width = 50;
-        let popup_height = 5;
-        let x = (area.width.saturating_sub(popup_width)) / 2;
-        let y = (area.height.saturating_sub(popup_height)) / 2;
 
-        let popup_area = Rect {
-            x,
-            y,
-            width: popup_width,
-            height: popup_height,
-        };
-
-        let content = format!(
-            "Create New Database\n\nName: {}\n\nPress Enter to create, Esc to cancel",
-            if self.state.new_database_name.is_empty() {
-                "_"
-            } else {
-                &self.state.new_database_name
-            }
-        );
-
-        let popup = Paragraph::new(content)
-            .block(
-                Block::default()
-                    .title("Database Name")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            )
-            .style(Style::default().fg(Color::White).bg(Color::Black).add_modifier(Modifier::BOLD))
-            .alignment(Alignment::Center);
-
-        f.render_widget(popup, popup_area);
-    }
-
-    fn render_save_filename_input(&self, f: &mut Frame, area: Rect) {
-        // Create centered popup
-        let popup_width = 60;
-        let popup_height = 6;
-        let x = (area.width.saturating_sub(popup_width)) / 2;
-        let y = (area.height.saturating_sub(popup_height)) / 2;
-
-        let popup_area = Rect {
-            x,
-            y,
-            width: popup_width,
-            height: popup_height,
-        };
-
-        let current_db = self.database_manager.get_current_database().unwrap_or("none");
-        let display_filename = if self.state.save_filename.is_empty() {
-            "_"
-        } else {
-            &self.state.save_filename
-        };
-
-        let content = format!(
-            "Save Database '{}' to File\n\nFilename: {}\n\n(.db extension will be added if not present)\nPress Enter to save, Esc to cancel",
-            current_db,
-            display_filename
-        );
-
-        let popup = Paragraph::new(content)
-            .block(
-                Block::default()
-                    .title("Save Database")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-            )
-            .style(Style::default().fg(Color::White).bg(Color::Black).add_modifier(Modifier::BOLD))
-            .alignment(Alignment::Center);
-
-        f.render_widget(popup, popup_area);
-    }
 
 
     fn render_view_name_input(&self, f: &mut Frame, area: Rect) {
