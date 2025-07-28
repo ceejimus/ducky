@@ -1476,44 +1476,7 @@ impl App {
         }
     }
 
-    fn start_delete_confirmation(&mut self) {
-        // Table deletion not implemented in state pattern yet
-        todo!("Table deletion should be moved to state pattern")
-    }
 
-    fn immediate_delete(&mut self) {
-        // Table deletion not implemented in state pattern yet
-        todo!("Table deletion should be moved to state pattern")
-    }
-
-    fn confirm_delete(&mut self) {
-        let (item_type, item_name) = match &self.state.delete_confirmation {
-            crate::app::state::DeleteConfirmationState::Table(name) => ("table", name.clone()),
-            _ => return,
-        };
-        
-        match item_type {
-            "table" => self.delete_table(&item_name),
-            _ => {}
-        }
-    }
-
-
-    fn delete_table(&mut self, table_name: &str) {
-        if let Err(e) = self.database_manager.remove_table(table_name) {
-            self.state.show_error(format!("Failed to delete table: {e}"));
-        } else {
-            // Clear table data if we deleted the currently viewed table
-            if let Some(current_table) = &self.state.selected_table {
-                if current_table == table_name {
-                    self.state.table_data = None;
-                    self.state.selected_table = None;
-                }
-            }
-            self.state_manager.sync_all_states(&self.database_manager);
-            self.state.show_success(format!("Deleted table '{table_name}'"));
-        }
-    }
 
     fn save_current_database_to_file(&mut self) {
         if let Some(current_db) = self.database_manager.get_current_database() {
@@ -1658,10 +1621,6 @@ impl App {
             self.render_view_name_input(f, f.area());
         }
 
-        // Render delete confirmation popup (legacy)
-        if self.state.is_delete_confirmation_active() {
-            self.render_delete_confirmation(f, f.area());
-        }
         
         // Render state pattern modals
         if self.state_manager.has_active_modal() {
@@ -2416,43 +2375,6 @@ impl App {
         f.render_widget(popup, popup_area);
     }
 
-    fn render_delete_confirmation(&self, f: &mut Frame, area: Rect) {
-        // Create centered popup
-        let popup_width = 60;
-        let popup_height = 6;
-        let x = (area.width.saturating_sub(popup_width)) / 2;
-        let y = (area.height.saturating_sub(popup_height)) / 2;
-
-        let popup_area = Rect {
-            x,
-            y,
-            width: popup_width,
-            height: popup_height,
-        };
-
-        let (item_type, item_name) = match &self.state.delete_confirmation {
-            crate::app::state::DeleteConfirmationState::Database(name) => ("database", name.as_str()),
-            crate::app::state::DeleteConfirmationState::Table(name) => ("table", name.as_str()),
-            _ => ("item", "unknown"),
-        };
-
-        let content = format!(
-            "⚠️  Delete Confirmation\n\nDelete {} '{}'?\nThis action cannot be undone!\n\nPress 'd' to confirm, Esc to cancel",
-            item_type, item_name
-        );
-
-        let popup = Paragraph::new(content)
-            .block(
-                Block::default()
-                    .title("Confirm Delete")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-            )
-            .style(Style::default().fg(Color::White).bg(Color::Black).add_modifier(Modifier::BOLD))
-            .alignment(Alignment::Center);
-
-        f.render_widget(popup, popup_area);
-    }
 
     fn render_view_name_input(&self, f: &mut Frame, area: Rect) {
         // Create centered popup

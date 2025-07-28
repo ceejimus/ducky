@@ -53,9 +53,9 @@ impl DeleteConfirmationModal {
                             context.selected_table = None;
                             context.table_data = None;
                         }
-                        Ok(format!("Deleted table '{}'", table_name))
+                        Ok(format!("Deleted table/view '{}'", table_name))
                     }
-                    Err(e) => Err(format!("Failed to delete table: {}", e)),
+                    Err(e) => Err(format!("Failed to delete table/view: {}", e)),
                 }
             }
         }

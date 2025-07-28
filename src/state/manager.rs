@@ -2,6 +2,7 @@ use crate::db::DatabaseManager;
 use crate::state::{AppContext, DatabaseSelectPanel, StateTransition, UIState, StateKey};
 use crate::state::states::TableListPanel;
 use crate::state::states::delete_confirmation_modal::DeleteConfirmationModal;
+use crate::state::states::database_name_input_modal::DatabaseNameInputModal;
 use crate::state::{ModalKey};
 use crossterm::event::KeyEvent;
 
@@ -112,6 +113,9 @@ impl StateManager {
                 let mut modal_state: Box<dyn UIState> = match modal_key {
                     ModalKey::DeleteConfirmation(delete_target) => {
                         Box::new(DeleteConfirmationModal::new(delete_target))
+                    }
+                    ModalKey::DatabaseNameInput => {
+                        Box::new(DatabaseNameInputModal::new())
                     }
                 };
                 

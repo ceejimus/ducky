@@ -319,6 +319,10 @@ impl UIState for DatabaseSelectPanel {
                     StateTransition::Stay
                 }
             }
+            KeyCode::Char('n') => {
+                // Start database name input (matching legacy behavior)
+                StateTransition::Push(crate::state::ModalKey::DatabaseNameInput)
+            }
             KeyCode::Char('q') => StateTransition::Exit,
             _ => StateTransition::Stay, // Ignore unhandled keys
         }

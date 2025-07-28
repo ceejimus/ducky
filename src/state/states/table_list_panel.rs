@@ -6,7 +6,8 @@ use ratatui::{
 
 use crate::{
     db::{query::TableQuerySpec, DatabaseManager},
-    state::{AppContext, StateKey, StateTransition, UIState},
+    state::{AppContext, StateKey, StateTransition, UIState, ModalKey},
+    state::states::DeleteTarget,
 };
 
 pub struct TableListPanel {
@@ -160,6 +161,15 @@ impl TableListPanel {
             }
         }
     }
+
+    fn delete_current_table(&self) -> StateTransition {
+        if let Some(table_name) = self.table_list.get(self.selected_table_index) {
+            let delete_target = DeleteTarget::Table(table_name.clone());
+            StateTransition::Push(ModalKey::DeleteConfirmation(delete_target))
+        } else {
+            StateTransition::Stay
+        }
+    }
 }
 
 impl UIState for TableListPanel {
@@ -198,6 +208,10 @@ impl UIState for TableListPanel {
             KeyCode::Enter => {
                 // Select table and transition to table data viewer
                 self.select_table(context, db_manager)
+            }
+            KeyCode::Char('d') => {
+                // Delete currently selected table (matching legacy behavior)
+                self.delete_current_table()
             }
             _ => StateTransition::Stay, // Ignore unhandled keys
         }

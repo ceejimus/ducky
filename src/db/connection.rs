@@ -141,10 +141,27 @@ impl DatabaseManager {
         if let Some(current_db) = &self.current_database {
             let current_db_name = current_db.clone();
             if let Some(conn) = self.connections.get(&current_db_name) {
-                // Execute DROP TABLE command
-                let sql = format!("DROP TABLE IF EXISTS {table_name}");
+                // First, determine if this is a table or view by checking table_type
+                let table_type_query = "SELECT table_type FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?";
+                let mut stmt = conn.prepare(table_type_query)?;
+                let mut rows = stmt.query([table_name])?;
+                
+                let table_type = if let Some(row) = rows.next()? {
+                    let table_type: String = row.get(0)?;
+                    table_type
+                } else {
+                    return Err(anyhow::anyhow!("Table or view '{}' not found", table_name));
+                };
+                
+                // Use appropriate DROP command based on table type
+                let sql = if table_type == "VIEW" {
+                    format!("DROP VIEW IF EXISTS {table_name}")
+                } else {
+                    format!("DROP TABLE IF EXISTS {table_name}")
+                };
+                
                 conn.execute(&sql, [])
-                    .with_context(|| format!("Failed to drop table '{table_name}'"))?;
+                    .with_context(|| format!("Failed to drop {} '{table_name}'", if table_type == "VIEW" { "view" } else { "table" }))?;
                 
                 // Refresh database info to update table list
                 self.refresh_database(&current_db_name)?;

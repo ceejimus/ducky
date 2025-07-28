@@ -36,4 +36,5 @@ pub enum StateKey {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModalKey {
     DeleteConfirmation(crate::state::states::DeleteTarget),
+    DatabaseNameInput,
 }
