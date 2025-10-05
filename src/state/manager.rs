@@ -1,6 +1,7 @@
 use crate::db::DatabaseManager;
 use crate::state::{AppContext, DatabaseSelectPanel, StateTransition, UIState, StateKey};
 use crate::state::states::TableListPanel;
+use crate::state::states::TableDataViewerState;
 use crate::state::states::delete_confirmation_modal::DeleteConfirmationModal;
 use crate::state::states::database_name_input_modal::DatabaseNameInputModal;
 use crate::state::states::database_save_modal::DatabaseSaveModal;
@@ -11,6 +12,7 @@ pub struct StateManager {
     context: AppContext,
     database_select_state: DatabaseSelectPanel,
     table_list_state: TableListPanel,
+    table_data_viewer_state: TableDataViewerState,
     // Modal state stack
     modal_stack: Vec<Box<dyn UIState>>,
     // Internal active state tracking
@@ -23,6 +25,7 @@ impl StateManager {
             context: AppContext::new(),
             database_select_state: DatabaseSelectPanel::new(),
             table_list_state: TableListPanel::new(),
+            table_data_viewer_state: TableDataViewerState::new(),
             modal_stack: Vec::new(),
             active_state: StateKey::DatabaseSelect,
         }
@@ -39,6 +42,7 @@ impl StateManager {
         db_manager: &mut DatabaseManager,
     ) -> Option<StateTransition> {
         log::debug!("StateManager handling key: {:?} for state: {:?}", key.code, self.active_state);
+        log::debug!("StateManager has {} modals on stack", self.modal_stack.len());
         
         // If there are modals on the stack, handle them first
         if let Some(modal_state) = self.modal_stack.last_mut() {
@@ -50,14 +54,24 @@ impl StateManager {
         // Get the transition from the appropriate state
         let transition = match self.active_state {
             StateKey::DatabaseSelect => {
+                log::debug!("StateManager: routing to DatabaseSelect state");
                 self.database_select_state
                     .handle_event(key, &mut self.context, db_manager)
             }
             StateKey::TableSelect => {
+                log::debug!("StateManager: routing to TableSelect state");
                 self.table_list_state
                     .handle_event(key, &mut self.context, db_manager)
             }
-            _ => return None, // Other states not implemented yet, fall back to legacy handling
+            StateKey::TableDataViewer => {
+                log::debug!("StateManager: routing to TableDataViewer state");
+                self.table_data_viewer_state
+                    .handle_event(key, &mut self.context, db_manager)
+            }
+            _ => {
+                log::debug!("StateManager: state {:?} not implemented, falling back to legacy", self.active_state);
+                return None; // Other states not implemented yet, fall back to legacy handling
+            }
         };
 
         log::debug!("StateManager got transition: {:?}", transition);
@@ -70,8 +84,10 @@ impl StateManager {
         match transition {
             StateTransition::Exit => Some(StateTransition::Exit),
             StateTransition::To(new_state) => {
+                log::debug!("StateManager: handling To({:?}) transition from {:?}", new_state, self.active_state);
                 // Handle state transition internally
                 if new_state == self.active_state {
+                    log::debug!("StateManager: already in target state, returning Stay");
                     return Some(StateTransition::Stay);
                 }
                 
@@ -82,6 +98,9 @@ impl StateManager {
                     }
                     StateKey::TableSelect => {
                         self.table_list_state.on_exit(&mut self.context, db_manager);
+                    }
+                    StateKey::TableDataViewer => {
+                        self.table_data_viewer_state.on_exit(&mut self.context, db_manager);
                     }
                     _ => {} // Other states not implemented yet
                 }
@@ -97,6 +116,9 @@ impl StateManager {
                     }
                     StateKey::TableSelect => {
                         self.table_list_state.on_enter(&mut self.context, db_manager);
+                    }
+                    StateKey::TableDataViewer => {
+                        self.table_data_viewer_state.on_enter(&mut self.context, db_manager);
                     }
                     _ => {
                         // State not implemented in state pattern yet - return for legacy handling
@@ -122,12 +144,30 @@ impl StateManager {
                         Box::new(DatabaseSaveModal::new())
                     }
                 };
-                
+
                 // Call on_enter for the modal
                 modal_state.on_enter(&mut self.context, db_manager);
                 self.modal_stack.push(modal_state);
-                
+
                 Some(StateTransition::Stay) // Modal is now active, stay in current state
+            }
+            StateTransition::PushState(state_key) => {
+                // Handle state push (e.g., filter input) by adding to stack
+                let mut state: Box<dyn UIState> = match state_key {
+                    StateKey::ColumnFilterInput(column_name) => {
+                        Box::new(crate::state::states::ColumnFilterInputState::new(column_name))
+                    }
+                    _ => {
+                        log::warn!("StateManager: tried to push unsupported state {:?}", state_key);
+                        return Some(StateTransition::Stay);
+                    }
+                };
+
+                // Call on_enter for the state
+                state.on_enter(&mut self.context, db_manager);
+                self.modal_stack.push(state);
+
+                Some(StateTransition::Stay) // State is now active on stack
             }
             StateTransition::Stay => {
                 // Event was handled internally
@@ -135,11 +175,23 @@ impl StateManager {
             }
             StateTransition::Pop => {
                 // Handle modal pop by removing from stack
-                if let Some(mut modal_state) = self.modal_stack.pop() {
+                let popped_state_name = if let Some(mut modal_state) = self.modal_stack.pop() {
+                    let name = modal_state.name().to_string();
                     // Call on_exit for the modal being closed
                     modal_state.on_exit(&mut self.context, db_manager);
+                    Some(name)
+                } else {
+                    None
+                };
+
+                // Exact copy of legacy behavior (ui/mod.rs lines 284-288):
+                // After filter finalize_search() returns true, refresh data WITHOUT limit
+                if popped_state_name.as_deref() == Some("ColumnFilterInputState")
+                    && self.active_state == StateKey::TableDataViewer {
+                    // Refresh table data without limit (false = no limit, matches legacy line 287)
+                    self.table_data_viewer_state.refresh_table_data(&mut self.context, db_manager, false);
                 }
-                
+
                 Some(StateTransition::Stay) // Return to underlying state
             }
         }
@@ -163,6 +215,37 @@ impl StateManager {
     ) {
         self.table_list_state
             .render(frame, area, &self.context, db_manager);
+    }
+
+    pub fn render_table_data_viewer(
+        &self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        db_manager: &DatabaseManager,
+    ) {
+        self.table_data_viewer_state
+            .render(frame, area, &self.context, db_manager);
+    }
+
+    pub fn is_filter_input_active(&self) -> bool {
+        // Check if the top of the modal stack is a ColumnFilterInputState
+        if let Some(top_state) = self.modal_stack.last() {
+            top_state.name() == "ColumnFilterInputState"
+        } else {
+            false
+        }
+    }
+
+    pub fn render_filter_input(
+        &self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        db_manager: &DatabaseManager,
+    ) {
+        // Render the filter input if it's on the stack
+        if let Some(filter_state) = self.modal_stack.last() {
+            filter_state.render(frame, area, &self.context, db_manager);
+        }
     }
 
     pub fn get_context(&self) -> &AppContext {
@@ -194,6 +277,10 @@ impl StateManager {
                 // Modal push transitions are handled by the main application
                 // This should not be called for Push() transitions as they are passed up
             }
+            StateTransition::PushState(_) => {
+                // State push transitions are handled by the main application
+                // This should not be called for PushState() transitions as they are passed up
+            }
             StateTransition::Pop => {
                 todo!("Modal state stack pop handling")
             }
@@ -213,6 +300,7 @@ impl StateManager {
         // Call sync on all existing states
         self.database_select_state.sync(&self.context, db_manager);
         self.table_list_state.sync(&self.context, db_manager);
+        self.table_data_viewer_state.sync(&self.context, db_manager);
     }
     
     pub fn enter_state(&mut self, state_key: StateKey, db_manager: &mut DatabaseManager) {
@@ -229,6 +317,9 @@ impl StateManager {
             }
             StateKey::TableSelect => {
                 self.table_list_state.on_enter(&mut self.context, db_manager);
+            }
+            StateKey::TableDataViewer => {
+                self.table_data_viewer_state.on_enter(&mut self.context, db_manager);
             }
             _ => {} // Other states not implemented in state pattern yet
         }
@@ -248,6 +339,9 @@ impl StateManager {
             }
             StateKey::TableSelect => {
                 self.table_list_state.on_exit(&mut self.context, db_manager);
+            }
+            StateKey::TableDataViewer => {
+                self.table_data_viewer_state.on_exit(&mut self.context, db_manager);
             }
             _ => {} // Other states not implemented in state pattern yet
         }

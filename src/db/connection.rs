@@ -253,6 +253,26 @@ impl DatabaseManager {
             Err(anyhow::anyhow!("No database connection available"))
         }
     }
+
+    pub fn get_table_schema(&self, table_name: &str) -> Result<QueryResult> {
+        if let Some(connection) = self.get_current_connection() {
+            let sql = format!("DESCRIBE {table_name}");
+            let executor = QueryExecutor::new(connection.try_clone()?);
+            executor.execute_query(&sql)
+        } else {
+            Err(anyhow::anyhow!("No database connection available"))
+        }
+    }
+
+    pub fn get_table_statistics(&self, table_name: &str) -> Result<QueryResult> {
+        if let Some(connection) = self.get_current_connection() {
+            let sql = format!("SUMMARIZE {table_name}");
+            let executor = QueryExecutor::new(connection.try_clone()?);
+            executor.execute_query(&sql)
+        } else {
+            Err(anyhow::anyhow!("No database connection available"))
+        }
+    }
 }
 
 impl Default for DatabaseManager {

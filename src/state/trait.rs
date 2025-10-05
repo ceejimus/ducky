@@ -22,7 +22,8 @@ pub enum StateTransition {
     Exit,
     To(StateKey),
     Push(ModalKey),         // Push a modal onto the stack
-    Pop,                    // Pop the current modal from the stack
+    PushState(StateKey),    // Push a state onto the stack (e.g., filter input)
+    Pop,                    // Pop the current modal/state from the stack
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +32,7 @@ pub enum StateKey {
     TableSelect,
     TableDataViewer,
     TableInspector,
+    ColumnFilterInput(String), // Column name being filtered
 }
 
 #[derive(Debug, Clone, PartialEq)]

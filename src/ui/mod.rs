@@ -168,6 +168,7 @@ impl App {
         match panel {
             NavigationPanel::DatabaseList => Some(StateKey::DatabaseSelect),
             NavigationPanel::TableList => Some(StateKey::TableSelect),
+            NavigationPanel::MainContent => Some(StateKey::TableDataViewer),
             _ => None, // Other panels not implemented in state pattern yet
         }
     }
@@ -176,6 +177,7 @@ impl App {
         match state_key {
             StateKey::DatabaseSelect => Some(NavigationPanel::DatabaseList),
             StateKey::TableSelect => Some(NavigationPanel::TableList),
+            StateKey::TableDataViewer => Some(NavigationPanel::MainContent),
             _ => None, // Other states not implemented in legacy UI
         }
     }
@@ -336,7 +338,7 @@ impl App {
                     // Handle exit request
                     return; // Exit the application - this will be handled by the main loop
                 }
-                StateTransition::Stay | StateTransition::Push(_) | StateTransition::Pop => {
+                StateTransition::Stay | StateTransition::Push(_) | StateTransition::PushState(_) | StateTransition::Pop => {
                     // These are handled internally by state manager
                     return;
                 }
@@ -500,33 +502,21 @@ impl App {
 
     // Vim navigation keys for UI navigation and modal modification
     fn handle_vim_up(&mut self) {
+        // TODO: Transition modify mode to state pattern
         // Handle modifying mode for inspect view
-        if self.state.is_modifying && self.state.inspect_mode {
-            if matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Schema) {
-                let selected_row = self.state.inspect_selected_row;
-                if selected_row > 0 {
-                    let target_row = selected_row - 1;
-                    if self.state.reorder_column(selected_row, target_row) {
-                        self.fetch_table_data_preserve_column();
-                        self.state.inspect_selected_row = target_row;
-                    }
-                }
-            }
-            return;
-        }
-        
-        // Handle inspect mode navigation
-        if self.state.inspect_mode {
-            // Normal navigation in inspect mode
-            if matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Schema) {
-                // Move selection up in columns view
-                self.state.inspect_move_selection_up();
-            } else {
-                // Scroll up in statistics view
-                self.state.inspect_scroll_up();
-            }
-            return;
-        }
+        // if self.state.is_modifying && self.state.inspect_mode {
+        //     if matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Schema) {
+        //         let selected_row = self.state.inspect_selected_row;
+        //         if selected_row > 0 {
+        //             let target_row = selected_row - 1;
+        //             if self.state.reorder_column(selected_row, target_row) {
+        //                 self.fetch_table_data_preserve_column();
+        //                 self.state.inspect_selected_row = target_row;
+        //             }
+        //         }
+        //     }
+        //     return;
+        // }
 
         match self.state.active_panel {
             NavigationPanel::MainContent => {
@@ -541,38 +531,23 @@ impl App {
     }
 
     fn handle_vim_down(&mut self) {
+        // TODO: Transition modify mode to state pattern
         // Handle modifying mode for inspect view
-        if self.state.is_modifying && self.state.inspect_mode {
-            if matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Schema) {
-                let total_cols = self.state.get_virtual_column_order().len();
-                let selected_row = self.state.inspect_selected_row;
-                
-                if selected_row + 1 < total_cols {
-                    let target_row = selected_row + 1;
-                    if self.state.reorder_column(selected_row, target_row) {
-                        self.fetch_table_data_preserve_column();
-                        self.state.inspect_selected_row = target_row;
-                    }
-                }
-            }
-            return;
-        }
-        
-        // Handle inspect mode navigation
-        if self.state.inspect_mode {
-            // Normal navigation in inspect mode
-            if matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Schema) {
-                // Move selection down in columns view (use total columns, not just visible)
-                let total_columns = self.state.get_virtual_column_order().len();
-                let (_max_rows, visible_rows) = self.calculate_inspect_scroll_bounds();
-                self.state.inspect_move_selection_down(total_columns, visible_rows);
-            } else {
-                // Scroll down in statistics view
-                let (max_rows, visible_rows) = self.calculate_inspect_scroll_bounds();
-                self.state.inspect_scroll_down(max_rows, visible_rows);
-            }
-            return;
-        }
+        // if self.state.is_modifying && self.state.inspect_mode {
+        //     if matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Schema) {
+        //         let total_cols = self.state.get_virtual_column_order().len();
+        //         let selected_row = self.state.inspect_selected_row;
+        //
+        //         if selected_row + 1 < total_cols {
+        //             let target_row = selected_row + 1;
+        //             if self.state.reorder_column(selected_row, target_row) {
+        //                 self.fetch_table_data_preserve_column();
+        //                 self.state.inspect_selected_row = target_row;
+        //             }
+        //         }
+        //     }
+        //     return;
+        // }
 
         match self.state.active_panel {
             NavigationPanel::MainContent => {
@@ -589,29 +564,21 @@ impl App {
     }
 
     fn handle_vim_left(&mut self) {
+        // TODO: Transition modify mode to state pattern
         // Handle modifying mode for table viewer - move selected column left
-        if self.state.is_modifying && matches!(self.state.active_panel, NavigationPanel::MainContent) && !self.state.inspect_mode {
-            if let Some(selected_column) = &self.state.selected_column {
-                if let Some(current_index) = self.state.get_column_index_by_name(selected_column) {
-                    if current_index > 0 {
-                        let target_index = current_index - 1;
-                        if self.state.reorder_column(current_index, target_index) {
-                            self.fetch_table_data_preserve_column();
-                        }
-                    }
-                }
-            }
-            return;
-        }
-        
-        // Handle inspect mode navigation - treat left as page up
-        if self.state.inspect_mode {
-            // Page up: scroll up by multiple rows
-            for _ in 0..5 {
-                self.state.inspect_scroll_up();
-            }
-            return;
-        }
+        // if self.state.is_modifying && matches!(self.state.active_panel, NavigationPanel::MainContent) && !self.state.inspect_mode {
+        //     if let Some(selected_column) = &self.state.selected_column {
+        //         if let Some(current_index) = self.state.get_column_index_by_name(selected_column) {
+        //             if current_index > 0 {
+        //                 let target_index = current_index - 1;
+        //                 if self.state.reorder_column(current_index, target_index) {
+        //                     self.fetch_table_data_preserve_column();
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     return;
+        // }
 
         match self.state.active_panel {
             NavigationPanel::MainContent => {
@@ -635,31 +602,22 @@ impl App {
     }
 
     fn handle_vim_right(&mut self) {
+        // TODO: Transition modify mode to state pattern
         // Handle modifying mode for table viewer - move selected column right
-        if self.state.is_modifying && matches!(self.state.active_panel, NavigationPanel::MainContent) && !self.state.inspect_mode {
-            if let Some(selected_column) = &self.state.selected_column {
-                if let Some(current_index) = self.state.get_column_index_by_name(selected_column) {
-                    let virtual_order = self.state.get_virtual_column_order();
-                    if current_index < virtual_order.len() - 1 {
-                        let target_index = current_index + 1;
-                        if self.state.reorder_column(current_index, target_index) {
-                            self.fetch_table_data_preserve_column();
-                        }
-                    }
-                }
-            }
-            return;
-        }
-        
-        // Handle inspect mode navigation - treat right as page down
-        if self.state.inspect_mode {
-            // Page down: scroll down by multiple rows
-            let (max_rows, visible_rows) = self.calculate_inspect_scroll_bounds();
-            for _ in 0..5 {
-                self.state.inspect_scroll_down(max_rows, visible_rows);
-            }
-            return;
-        }
+        // if self.state.is_modifying && matches!(self.state.active_panel, NavigationPanel::MainContent) && !self.state.inspect_mode {
+        //     if let Some(selected_column) = &self.state.selected_column {
+        //         if let Some(current_index) = self.state.get_column_index_by_name(selected_column) {
+        //             let virtual_order = self.state.get_virtual_column_order();
+        //             if current_index < virtual_order.len() - 1 {
+        //                 let target_index = current_index + 1;
+        //                 if self.state.reorder_column(current_index, target_index) {
+        //                     self.fetch_table_data_preserve_column();
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     return;
+        // }
 
         match self.state.active_panel {
             NavigationPanel::MainContent => {
@@ -1248,16 +1206,6 @@ impl App {
         Ok(column_names)
     }
 
-    fn get_table_schema(&self, connection: &duckdb::Connection, table_name: &str) -> anyhow::Result<crate::db::query::QueryResult> {
-        let sql = format!("DESCRIBE {table_name}");
-        self.execute_query_direct(connection, &sql)
-    }
-
-    fn get_table_statistics(&self, connection: &duckdb::Connection, table_name: &str) -> anyhow::Result<crate::db::query::QueryResult> {
-        let sql = format!("SUMMARIZE {table_name}");
-        self.execute_query_direct(connection, &sql)
-    }
-
     fn execute_query_direct(&self, connection: &duckdb::Connection, sql: &str) -> anyhow::Result<crate::db::query::QueryResult> {
         let start_time = std::time::Instant::now();
         
@@ -1333,17 +1281,15 @@ impl App {
             // No popup - will show in status bar instead
             return;
         }
-        
+
         match self.state.active_panel {
             NavigationPanel::DatabaseList => {
                 // Database panel Enter handling is now handled by state pattern
                 // This fallback should not be reached when state pattern is active
             }
             NavigationPanel::MainContent => {
-                // Toggle column expansion when viewing table data (but not in modifying mode)
-                if self.state.table_data.is_some() && !self.state.is_modifying {
-                    self.state.toggle_column_expansion();
-                }
+                // Table viewer Enter handling is now handled by state pattern
+                // This fallback should not be reached when state pattern is active
             }
             _ => {}
         }
@@ -1442,30 +1388,24 @@ impl App {
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(header, chunks[0]);
 
-        // Check for inspect mode - use full area for inspection
-        if self.state.inspect_mode {
-            if let Some(table) = self.state.selected_table.clone() {
-                self.render_inspect_view(f, chunks[1], &table);
-            }
-        } else {
-            // Normal mode: Main content area - New 2-panel layout
-            let main_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(30), // Left sidebar
-                    Constraint::Percentage(70), // Table viewer
-                ])
-                .split(chunks[1]);
+        // Main content area - New 2-panel layout
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30), // Left sidebar
+                Constraint::Percentage(70), // Table viewer
+            ])
+            .split(chunks[1]);
 
-            // Sync flash state before rendering to ensure current flash status
-            self.sync_to_state_manager();
-            
-            // Left sidebar (combined database + table list)
-            self.render_left_sidebar(f, main_chunks[0]);
+        // Sync flash state before rendering to ensure current flash status
+        self.sync_to_state_manager();
 
-            // Table viewer (renamed from main content)
-            self.render_table_viewer(f, main_chunks[1]);
-        }
+        // Left sidebar (combined database + table list)
+        self.render_left_sidebar(f, main_chunks[0]);
+
+        // Table viewer (renamed from main content) - use state pattern
+        // Note: Inspect mode is handled internally by TableDataViewerState
+        self.state_manager.render_table_data_viewer(f, main_chunks[1], &self.database_manager);
 
         // Status bar
         self.render_status_bar(f, chunks[2]);
@@ -1533,393 +1473,14 @@ impl App {
         }
     }
 
-    fn render_table_viewer(&mut self, f: &mut Frame, area: Rect) {
-        // Check if we're in inspect mode and have a selected table
-        if self.state.inspect_mode {
-            if let Some(table) = self.state.selected_table.clone() {
-                self.render_inspect_view(f, area, &table);
-                return;
-            }
-        }
-
-        // Cache area height for navigation calculations
-        self.state.last_table_area_height = area.height;
-        let border_style = self.get_panel_border_style(NavigationPanel::MainContent);
-
-        let (content, title): (String, String) = if self.state.current_state == AppState::ImportWizard && self.state.is_creating_table {
-            match self.state.table_creation_step {
-                TableCreationStep::EnteringTableName => {
-                    let content = format!(
-                        "Create New Table\n\nTable name: {}\n\nType the table name and press Enter to continue\nPress Esc to cancel",
-                        if self.state.new_table_name.is_empty() { 
-                            "_" 
-                        } else { 
-                            &self.state.new_table_name 
-                        }
-                    );
-                    (content, "Import Wizard - Table Name".to_string())
-                }
-                TableCreationStep::SelectingFile => {
-                    let content = format!(
-                        "Create New Table: '{}'\n\nSelect a file to import data from:\n• CSV files (.csv)\n• JSON files (.json)\n• Parquet files (.parquet)\n\nPress Esc to cancel",
-                        self.state.new_table_name
-                    );
-                    (content, "Import Wizard - File Selection".to_string())
-                }
-                TableCreationStep::ImportingData => {
-                    let content = format!(
-                        "Create New Table: '{}'\n\nImporting data...\n\nPlease wait while the data is being imported.",
-                        self.state.new_table_name
-                    );
-                    (content, "Import Wizard - Importing".to_string())
-                }
-            }
-        } else if let (Some(db), Some(table)) = (&self.state.selected_database, &self.state.selected_table) {
-            if let Some(ref data) = self.state.table_data {
-                // Render table using ratatui Table widget instead of string content
-                // Build table title with sort status
-                let sort_info = if !self.state.sort_columns.is_empty() {
-                    let mut sort_parts = Vec::new();
-                    for sort_spec in &self.state.sort_columns {
-                        let direction = match sort_spec.direction {
-                            SortDirection::Ascending => "ASC",
-                            SortDirection::Descending => "DESC",
-                        };
-                        sort_parts.push(format!("{} {}", sort_spec.column_name, direction));
-                    }
-                    
-                    if !sort_parts.is_empty() {
-                        format!(" - Sorted by: {}", sort_parts.join(", "))
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    String::new()
-                };
-                
-                let title = format!("Table: {} ({} rows){}", table, data.row_count, sort_info);
-                self.render_table_widget(f, area, data, &title);
-                return; // Early return since we handled rendering directly
-            } else {
-                let content = format!(
-                    "Database: {db}\nTable: {table}\n\nLoading table data...\n\nPress Enter on table to load data or wait for auto-load"
-                );
-                (content, "Table Viewer".to_string())
-            }
-        } else {
-            let debug_info = format!(
-                "Database: {:?}\nTable: {:?}", 
-                self.state.selected_database, 
-                self.state.selected_table
-            );
-            let content = format!(
-                "Select a database and table to view data\n\nNavigation:\n• Use Tab/Shift+Tab to switch panels\n• Use ↑↓ to navigate lists\n• Press Enter to select items\n• Press i to import data\n• Press h for help\n• Press q or Esc to quit\n\nDebug:\n{}", 
-                debug_info
-            );
-            (content, "Main Content [3]".to_string())
-        };
-
-        let paragraph = Paragraph::new(content)
-            .block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            )
-            .wrap(Wrap { trim: true })
-            .style(Style::default().fg(Color::White));
-
-        f.render_widget(paragraph, area);
-    }
-
-    fn render_inspect_view(&mut self, f: &mut Frame, area: Rect, table_name: &str) {
-        // Get schema and statistics data
-        let (schema_data, stats_data) = if let Some(connection) = self.database_manager.get_current_connection() {
-            let schema = self.get_table_schema(connection, table_name)
-                .unwrap_or_else(|_| crate::db::query::QueryResult::new());
-            let stats = self.get_table_statistics(connection, table_name)
-                .unwrap_or_else(|_| crate::db::query::QueryResult::new());
-            (schema, stats)
-        } else {
-            (crate::db::query::QueryResult::new(), crate::db::query::QueryResult::new())
-        };
-
-        // Split area into two sections: schema on top, statistics on bottom
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(50), // Schema section
-                Constraint::Percentage(50), // Statistics section
-            ])
-            .split(area);
-
-        // Render schema section
-        self.render_schema_section(f, chunks[0], table_name, &schema_data);
-        
-        // Render statistics section
-        self.render_statistics_section(f, chunks[1], table_name, &stats_data);
-    }
-
-    fn render_schema_section(&self, f: &mut Frame, area: Rect, table_name: &str, schema_data: &crate::db::query::QueryResult) {
-        // Determine if this section is active and style accordingly
-        let is_active = matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Schema);
-        let border_style = if is_active {
-            Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        
-        // Create title with active indicator
-        let title = if is_active {
-            if self.state.is_modifying {
-                format!("► Columns: {} (MODIFY MODE - j/k to move, J/K for extremes, o to hide/show, Enter to confirm, Esc to cancel)", table_name)
-            } else {
-                format!("► Columns: {} (Tab to switch, j/k to scroll, m to modify)", table_name)
-            }
-        } else {
-            format!("Columns: {}", table_name)
-        };
-
-        if schema_data.rows.is_empty() {
-            // No schema data available
-            let content = "No column information available for this table.";
-            let paragraph = Paragraph::new(content)
-                .block(
-                    Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(border_style),
-                )
-                .wrap(Wrap { trim: true })
-                .style(Style::default().fg(Color::White));
-            f.render_widget(paragraph, area);
-            return;
-        }
-
-        // Build table rows from schema data, respecting virtual column order
-        let virtual_order = self.state.get_virtual_column_order();
-        let original_columns = self.state.get_original_column_names();
-        
-        // Reorder schema data to match virtual column order
-        let mut ordered_schema_rows = Vec::new();
-        for virtual_col_name in &virtual_order {
-            // Find the index of this column in the original schema
-            if let Some(original_idx) = original_columns.iter().position(|name| name == virtual_col_name) {
-                if original_idx < schema_data.rows.len() {
-                    ordered_schema_rows.push(schema_data.rows[original_idx].clone());
-                }
-            }
-        }
-        
-        // Create header in virtual order (add extra columns for enhanced display)
-        let header = vec![
-            Cell::from("Column Name"),
-            Cell::from("Data Type"),
-            Cell::from("Nullable"),
-            Cell::from("Sort Order"),
-            Cell::from("Sort Direction"),
-            Cell::from("Hidden"),
-        ];
-        
-        // Apply scrolling: skip rows based on scroll position
-        let scroll_offset = self.state.inspect_schema_scroll_y;
-        let rows: Vec<Row> = ordered_schema_rows.iter()
-            .enumerate()
-            .skip(scroll_offset)
-            .map(|(row_idx, row)| {
-                // Get the virtual column index
-                let virtual_col_idx = scroll_offset + row_idx;
-                
-                // Get the column name from virtual order
-                let column_name = if virtual_col_idx < virtual_order.len() {
-                    &virtual_order[virtual_col_idx]
-                } else {
-                    return Row::new(vec![Cell::from("ERROR")]);
-                };
-                
-                // Check if this column is hidden by name
-                let is_hidden = self.state.is_column_hidden_by_name(column_name);
-                
-                // Get sort information
-                let sort_info = self.state.sort_columns.iter()
-                    .position(|spec| spec.column_name == *column_name)
-                    .map(|pos| (pos + 1, &self.state.sort_columns[pos].direction));
-                
-                let (sort_order, sort_direction) = match sort_info {
-                    Some((order, direction)) => {
-                        let dir_str = match direction {
-                            SortDirection::Ascending => "ASC",
-                            SortDirection::Descending => "DESC",
-                        };
-                        (order.to_string(), dir_str.to_string())
-                    },
-                    None => ("".to_string(), "".to_string()),
-                };
-                
-                // Build enhanced row with additional columns
-                let base_style = if is_hidden {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default()
-                };
-                
-                let cells = vec![
-                    Cell::from(row.first().unwrap_or(&"?".to_string()).clone()).style(base_style),  // Column Name
-                    Cell::from(row.get(1).unwrap_or(&"?".to_string()).clone()).style(base_style),  // Data Type
-                    Cell::from(row.get(2).unwrap_or(&"?".to_string()).clone()).style(base_style),  // Nullable
-                    Cell::from(sort_order.clone()).style(base_style),                              // Sort Order
-                    Cell::from(sort_direction.clone()).style(base_style),                          // Sort Direction
-                    Cell::from(if is_hidden { "YES" } else { "NO" }).style(base_style),            // Hidden
-                ];
-                
-                Row::new(cells)
-            }).collect();
-
-        // Use fixed column widths for the enhanced display (6 columns)
-        let constraints: Vec<Constraint> = vec![
-            Constraint::Length(15),  // Column Name
-            Constraint::Length(12),  // Data Type
-            Constraint::Length(8),   // Nullable
-            Constraint::Length(10),  // Sort Order
-            Constraint::Length(12),  // Sort Direction
-            Constraint::Length(6),   // Hidden
-        ];
-
-        let table = Table::new(rows, constraints)
-            .header(Row::new(header).style(Style::default().add_modifier(Modifier::BOLD)))
-            .block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            )
-            .highlight_style(if is_active {
-                Style::default().bg(Color::Gray).fg(Color::Black).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().bg(Color::DarkGray)
-            })
-            .style(Style::default().fg(Color::White));
-
-        // Create table state for selection
-        let mut table_state = TableState::default();
-        if is_active {
-            // Show selection only when this section is active
-            let selected_index = self.state.inspect_selected_row.saturating_sub(scroll_offset);
-            table_state.select(Some(selected_index));
-        }
-
-        f.render_stateful_widget(table, area, &mut table_state);
-    }
-
-    fn render_statistics_section(&self, f: &mut Frame, area: Rect, table_name: &str, stats_data: &crate::db::query::QueryResult) {
-        // Determine if this section is active and style accordingly
-        let is_active = matches!(self.state.inspect_active_section, crate::app::state::InspectSection::Statistics);
-        let border_style = if is_active {
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        
-        // Create title with active indicator
-        let title = if is_active {
-            format!("► Statistics: {table_name} (Tab to switch, ↑↓ to scroll, Esc to exit)")
-        } else {
-            format!("Statistics: {table_name} (Press Esc to exit inspect mode)")
-        };
-
-        if stats_data.rows.is_empty() {
-            // No statistics data available
-            let content = "No statistics available for this table.";
-            let paragraph = Paragraph::new(content)
-                .block(
-                    Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(border_style),
-                )
-                .wrap(Wrap { trim: true })
-                .style(Style::default().fg(Color::White));
-            f.render_widget(paragraph, area);
-            return;
-        }
-
-        // Build table rows from statistics data
-        let header = stats_data.columns.iter().map(|col| Cell::from(col.as_str())).collect::<Vec<_>>();
-        
-        // Apply scrolling: skip rows based on scroll position
-        let scroll_offset = self.state.inspect_stats_scroll_y;
-        let rows: Vec<Row> = stats_data.rows.iter()
-            .skip(scroll_offset)
-            .map(|row| {
-                let cells: Vec<Cell> = row.iter().map(|cell| Cell::from(cell.as_str())).collect();
-                Row::new(cells)
-            }).collect();
-
-        // Calculate column widths based on content
-        let mut column_widths = vec![0; stats_data.columns.len()];
-        
-        // Check header widths
-        for (i, col) in stats_data.columns.iter().enumerate() {
-            column_widths[i] = col.len().max(column_widths[i]);
-        }
-        
-        // Check data widths
-        for row in &stats_data.rows {
-            for (i, cell) in row.iter().enumerate() {
-                if i < column_widths.len() {
-                    column_widths[i] = cell.len().max(column_widths[i]);
-                }
-            }
-        }
-
-        // Convert to constraints with minimum and maximum widths
-        let constraints: Vec<Constraint> = column_widths.iter().map(|&width| {
-            let min_width = 8; // Minimum column width
-            let max_width = 20; // Slightly smaller max for statistics to fit more columns
-            let adjusted_width = width.max(min_width).min(max_width);
-            Constraint::Length(adjusted_width as u16)
-        }).collect();
-
-        let table = Table::new(rows, constraints)
-            .header(Row::new(header).style(Style::default().add_modifier(Modifier::BOLD)))
-            .block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            )
-            .highlight_style(Style::default().bg(Color::DarkGray))
-            .style(Style::default().fg(Color::White));
-
-        f.render_widget(table, area);
-    }
-
-    fn calculate_inspect_scroll_bounds(&self) -> (usize, usize) {
-        // Calculate scrolling bounds for inspect mode
-        // Each section gets 50% of the main content area height
-        let section_height = (self.state.last_table_area_height / 2).saturating_sub(3) as usize; // Subtract for borders
-        let visible_rows = section_height.max(5); // Minimum 5 visible rows
-        
-        // Calculate max rows based on active section
-        let max_rows = match self.state.inspect_active_section {
-            crate::app::state::InspectSection::Schema => {
-                // For schema, estimate based on typical column count
-                // Most tables have 3-20 columns, so max_rows would be that count
-                20 // Conservative estimate - in practice this will be determined by actual data
-            }
-            crate::app::state::InspectSection::Statistics => {
-                // For statistics, DuckDB SUMMARIZE typically returns one row per column
-                // So this is similar to schema but may be longer with statistics per column
-                50 // Conservative estimate for statistics rows
-            }
-        };
-        
-        (max_rows, visible_rows)
-    }
 
     fn render_status_bar(&self, f: &mut Frame, area: Rect) {
-        if self.state.is_searching {
-            // Search mode: use entire status bar for search input
+        // Check if filter input state is active (state pattern)
+        if self.state_manager.is_filter_input_active() {
+            // Filter input mode: use entire status bar for filter input (state pattern)
+            self.state_manager.render_filter_input(f, area, &self.database_manager);
+        } else if self.state.is_searching {
+            // Search mode: use entire status bar for search input (legacy)
             self.render_search_input(f, area);
         } else {
             // Normal mode: split status bar into left and right sections
@@ -1933,7 +1494,7 @@ impl App {
 
             // Render left status section (general status)
             self.render_left_status(f, status_chunks[0]);
-            
+
             // Render right status section (table viewer status)
             self.render_table_status(f, status_chunks[1]);
         }
